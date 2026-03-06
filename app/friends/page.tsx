@@ -236,116 +236,86 @@ const ChatModal = ({ user, friend, onClose }: { user: any, friend: any, onClose:
   );
 };
 
+import useSWR from 'swr';
+
 export default function FriendManager() {
-  const [user, setUser] = useState<any>(null);
-  const [friends, setFriends] = useState<any[]>([]);
   const [potentialFriends, setPotentialFriends] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [chatFriend, setChatFriend] = useState<any>(null);
   const [modalSearchQuery, setModalSearchQuery] = useState('');
   const [mainSearchQuery, setMainSearchQuery] = useState('');
-  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  const [sentRequests, setSentRequests] = useState<string[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
-  const chatFriendRef = React.useRef(chatFriend);
-  React.useEffect(() => {
-    chatFriendRef.current = chatFriend;
-  }, [chatFriend]);
+  const fetchFriendsData = async () => {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) return { user: null, friends: [], pendingRequests: [], sentRequests: [] };
 
-  // Global subscription for incoming messages
-  React.useEffect(() => {
-    if (!user) return;
-    const channel = supabase
-      .channel(`global_notifications_${user.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'direct_messages',
-        filter: `receiver_id=eq.${user.id}`
-      }, (payload) => {
-        const senderId = payload.new.sender_id;
-        // Don't increment if we are actively chatting with this person
-        if (chatFriendRef.current?.id !== senderId) {
-          setUnreadCounts(prev => ({
-            ...prev,
-            [senderId]: (prev[senderId] || 0) + 1
-          }));
-        }
-      })
-      .subscribe();
+    // Optimized parallel data fetching
+    const friendshipPromise = supabase
+      .from('friendships')
+      .select(`
+        status,
+        friend:friend_id(id, full_name, avatar_url, specialty, rank)
+      `)
+      .eq('user_id', authUser.id)
+      .eq('status', 'accepted');
 
-    return () => {
-      supabase.removeChannel(channel);
+    const incomingPromise = supabase
+      .from('friendships')
+      .select(`
+        status,
+        requestor:user_id(id, full_name, avatar_url, specialty, rank)
+      `)
+      .eq('friend_id', authUser.id)
+      .eq('status', 'pending');
+
+    const outgoingPromise = supabase
+      .from('friendships')
+      .select('friend_id')
+      .eq('user_id', authUser.id)
+      .eq('status', 'pending');
+
+    const [friendshipRes, incomingRes, outgoingRes] = await Promise.all([
+      friendshipPromise,
+      incomingPromise,
+      outgoingPromise
+    ]);
+
+    const friendsList = (friendshipRes.data || []).filter((f: any) => f.friend).map((f: any) => ({
+      id: f.friend.id,
+      name: f.friend.full_name || 'Anonymous',
+      personality: f.friend.specialty || 'General Expert',
+      avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
+      isOnline: Math.random() > 0.5 // Simulated for now
+    }));
+
+    const incomingList = (incomingRes.data || []).filter((f: any) => f.requestor).map((f: any) => ({
+      id: f.requestor.id,
+      name: f.requestor.full_name || 'Anonymous',
+      personality: f.requestor.specialty || 'General Expert',
+      avatar: f.requestor.avatar_url || `https://picsum.photos/seed/${f.requestor.id}/200/200`,
+      isOnline: Math.random() > 0.5
+    }));
+
+    const outgoingList = (outgoingRes.data || []).map(f => f.friend_id);
+
+    return {
+      user: authUser,
+      friends: friendsList,
+      pendingRequests: incomingList,
+      sentRequests: outgoingList
     };
-  }, [user]);
+  };
 
-  React.useEffect(() => {
-    async function init() {
-      setLoading(true);
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) {
-        setLoading(false);
-        return;
-      }
-      setUser(authUser);
+  const { data, isLoading, mutate } = useSWR('user_friends_data', fetchFriendsData, {
+    revalidateOnFocus: false
+  });
 
-      // Fetch friends
-      const { data: friendshipData } = await supabase
-        .from('friendships')
-        .select(`
-          status,
-          friend:friend_id(id, full_name, avatar_url, specialty, rank)
-        `)
-        .eq('user_id', authUser.id)
-        .eq('status', 'accepted');
-
-      // Fetch pending incoming requests
-      const { data: incomingData } = await supabase
-        .from('friendships')
-        .select(`
-          status,
-          requestor:user_id(id, full_name, avatar_url, specialty, rank)
-        `)
-        .eq('friend_id', authUser.id)
-        .eq('status', 'pending');
-
-      // Fetch pending outgoing requests
-      const { data: outgoingData } = await supabase
-        .from('friendships')
-        .select('friend_id')
-        .eq('user_id', authUser.id)
-        .eq('status', 'pending');
-
-      if (friendshipData) {
-        setFriends(friendshipData.map((f: any) => ({
-          id: f.friend.id,
-          name: f.friend.full_name || 'Anonymous',
-          personality: f.friend.specialty || 'General Expert',
-          avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
-          isOnline: Math.random() > 0.5 // Simulated for now
-        })));
-      }
-
-      if (incomingData) {
-        setPendingRequests(incomingData.map((f: any) => ({
-          id: f.requestor.id,
-          name: f.requestor.full_name || 'Anonymous',
-          personality: f.requestor.specialty || 'General Expert',
-          avatar: f.requestor.avatar_url || `https://picsum.photos/seed/${f.requestor.id}/200/200`,
-          isOnline: Math.random() > 0.5
-        })));
-      }
-
-      if (outgoingData) {
-        setSentRequests(outgoingData.map(f => f.friend_id));
-      }
-
-      setLoading(false);
-    }
-    init();
-  }, []);
+  const user = data?.user || null;
+  const friends = data?.friends || [];
+  const pendingRequests = data?.pendingRequests || [];
+  const sentRequests = data?.sentRequests || [];
+  const loading = isLoading;
 
   React.useEffect(() => {
     if (!modalSearchQuery.trim() || !user) {
@@ -394,7 +364,13 @@ export default function FriendManager() {
       return;
     }
 
-    setSentRequests([...sentRequests, friend.id]);
+    mutate((currentData: any) => {
+      if (!currentData) return currentData;
+      return {
+        ...currentData,
+        sentRequests: [...currentData.sentRequests, friend.id]
+      };
+    }, false);
   };
 
   const acceptRequest = async (requestor: any) => {
@@ -419,8 +395,14 @@ export default function FriendManager() {
       });
 
     if (!insertError) {
-      setPendingRequests(pendingRequests.filter(req => req.id !== requestor.id));
-      setFriends([...friends, requestor]);
+      mutate((currentData: any) => {
+        if (!currentData) return currentData;
+        return {
+          ...currentData,
+          pendingRequests: currentData.pendingRequests.filter((req: any) => req.id !== requestor.id),
+          friends: [...currentData.friends, requestor]
+        };
+      }, false);
     }
   };
 
@@ -434,7 +416,13 @@ export default function FriendManager() {
       .eq('friend_id', user.id);
 
     if (!error) {
-      setPendingRequests(pendingRequests.filter(req => req.id !== requestor.id));
+      mutate((currentData: any) => {
+        if (!currentData) return currentData;
+        return {
+          ...currentData,
+          pendingRequests: currentData.pendingRequests.filter((req: any) => req.id !== requestor.id)
+        };
+      }, false);
     }
   };
 

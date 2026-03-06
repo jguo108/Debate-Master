@@ -63,6 +63,8 @@ const initialScheduled = [
 
 const initialPending: any[] = [];
 
+import useSWR from 'swr';
+
 function DebatesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'history' | 'scheduled' | 'pending'>(() => {
@@ -73,132 +75,126 @@ function DebatesContent() {
     return 'history';
   });
 
-  const [histories, setHistories] = useState<any[]>([]);
-  const [scheduled, setScheduled] = useState<any[]>([]);
-  const [pending, setPending] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchDebatesData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { histories: [], scheduled: [], pending: [] };
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
+    const histPromise = supabase
+      .from('debates')
+      .select(`*`)
+      .eq('status', 'concluded')
+      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+
+    const schedPromise = supabase
+      .from('debates')
+      .select(`*`)
+      .eq('status', 'scheduled')
+      .neq('mode', 'ai')
+      .neq('status', 'cancelled')
+      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+
+    const pendPromise = supabase
+      .from('debates')
+      .select(`*`)
+      .eq('status', 'pending')
+      .neq('status', 'cancelled')
+      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+
+    const [histRes, schedRes, pendRes] = await Promise.all([histPromise, schedPromise, pendPromise]);
+
+    // Gather all opponent IDs for a single bulk profile fetch to avoid N+1 problem
+    const allDebates = [...(histRes.data || []), ...(schedRes.data || []), ...(pendRes.data || [])];
+    const opponentIds = new Set<string>();
+
+    allDebates.forEach(d => {
+      const oppId = d.pro_user_id === user.id ? d.con_user_id : d.pro_user_id;
+      if (oppId) opponentIds.add(oppId);
+    });
+
+    const profilesMap = new Map<string, any>();
+    if (opponentIds.size > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', Array.from(opponentIds));
+
+      if (profiles) {
+        profiles.forEach(p => profilesMap.set(p.id, p));
       }
-
-      // Fetch Histories (Concluded)
-      const { data: hist } = await supabase
-        .from('debates')
-        .select(`*`)
-        .eq('status', 'concluded')
-        .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
-
-      if (hist) {
-        const enrichedHist = await Promise.all(hist.map(async (d) => {
-          let opponentId = d.pro_user_id === user.id ? d.con_user_id : d.pro_user_id;
-          let opponentName = 'AI Assistant';
-          if (opponentId) {
-            const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', opponentId).single();
-            if (profile) opponentName = profile.full_name || 'Opponent';
-          }
-          return {
-            id: d.id,
-            title: d.topic,
-            outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
-            date: new Date(d.created_at).toLocaleDateString(),
-            opponent: opponentName,
-            image: `https://picsum.photos/seed/${d.id}/600/400`,
-            score: "N/A"
-          };
-        }));
-        setHistories(enrichedHist);
-      }
-
-      // Fetch Scheduled
-      const { data: sched } = await supabase
-        .from('debates')
-        .select(`*`)
-        .eq('status', 'scheduled')
-        .neq('mode', 'ai')
-        .neq('status', 'cancelled')
-        .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
-
-      if (sched) {
-        const enrichedSched = await Promise.all(sched.map(async (d) => {
-          let opponentId = d.pro_user_id === user.id ? d.con_user_id : d.pro_user_id;
-          let opponentName = 'AI Assistant';
-          let opponentAvatar = 'https://picsum.photos/seed/ai/100/100';
-          if (opponentId) {
-            const { data: profile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', opponentId).single();
-            if (profile) {
-              opponentName = profile.full_name || 'Opponent';
-              opponentAvatar = profile.avatar_url || `https://picsum.photos/seed/${opponentId}/100/100`;
-            }
-          }
-
-          const scheduledTime = new Date(d.scheduled_at || d.created_at).getTime();
-          const limitMs = (d.time_limit || 10) * 60 * 1000;
-          const isOverdue = Date.now() > (scheduledTime + limitMs);
-
-          return {
-            id: d.id,
-            title: d.topic,
-            date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
-            time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            timeLimit: d.time_limit.toString(),
-            opponent: opponentName,
-            avatar: opponentAvatar,
-            mode: d.mode,
-            isOverdue
-          };
-        }));
-        setScheduled(enrichedSched);
-      }
-
-      // Fetch Pending
-      const { data: pend } = await supabase
-        .from('debates')
-        .select(`*`)
-        .eq('status', 'pending')
-        .neq('status', 'cancelled')
-        .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
-
-      if (pend) {
-        const enrichedPend = await Promise.all(pend.map(async (d) => {
-          const isSent = d.pro_user_id === user.id;
-          let opponentId = isSent ? d.con_user_id : d.pro_user_id;
-          let opponentName = 'Anonymous';
-          let opponentAvatar = 'https://picsum.photos/seed/anon/100/100';
-
-          if (opponentId) {
-            const { data: profile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', opponentId).single();
-            if (profile) {
-              opponentName = profile.full_name || 'Anonymous';
-              opponentAvatar = profile.avatar_url || `https://picsum.photos/seed/${opponentId}/100/100`;
-            }
-          }
-
-          return {
-            id: d.id,
-            title: d.topic,
-            date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
-            time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            timeLimit: d.time_limit?.toString() || "10",
-            opponent: opponentName,
-            avatar: opponentAvatar,
-            type: isSent ? 'sent' : 'received',
-            status: d.status
-          };
-        }));
-        setPending(enrichedPend);
-      } else {
-        setPending([]);
-      }
-      setLoading(false);
     }
-    fetchData();
-  }, [activeTab]);
+
+    const mapOpponent = (d: any, isSentRequest = false) => {
+      let opponentId = d.pro_user_id === user.id ? d.con_user_id : d.pro_user_id;
+      if (isSentRequest) opponentId = d.con_user_id;
+
+      const p = opponentId ? profilesMap.get(opponentId) : null;
+      return {
+        name: p?.full_name || (opponentId ? 'Anonymous' : 'AI Assistant'),
+        avatar: p?.avatar_url || `https://picsum.photos/seed/${opponentId || 'ai'}/100/100`
+      };
+    };
+
+    const enrichedHist = (histRes.data || []).map(d => {
+      const opp = mapOpponent(d);
+      return {
+        id: d.id,
+        title: d.topic,
+        outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
+        date: new Date(d.created_at).toLocaleDateString(),
+        opponent: opp.name,
+        image: `https://picsum.photos/seed/${d.id}/600/400`,
+        score: "N/A"
+      };
+    });
+
+    const enrichedSched = (schedRes.data || []).map(d => {
+      const opp = mapOpponent(d);
+      const scheduledTime = new Date(d.scheduled_at || d.created_at).getTime();
+      const limitMs = (d.time_limit || 10) * 60 * 1000;
+      const isOverdue = Date.now() > (scheduledTime + limitMs);
+
+      return {
+        id: d.id,
+        title: d.topic,
+        date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
+        time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timeLimit: d.time_limit.toString(),
+        opponent: opp.name,
+        avatar: opp.avatar,
+        mode: d.mode,
+        isOverdue
+      };
+    });
+
+    const enrichedPend = (pendRes.data || []).map(d => {
+      const isSent = d.pro_user_id === user.id;
+      // For pending requests "sent", the opponent is always con_user_id
+      const opp = mapOpponent(d, isSent);
+
+      return {
+        id: d.id,
+        title: d.topic,
+        date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
+        time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timeLimit: d.time_limit?.toString() || "10",
+        opponent: opp.name,
+        avatar: opp.avatar,
+        type: isSent ? 'sent' : 'received',
+        status: d.status
+      };
+    });
+
+    return { histories: enrichedHist, scheduled: enrichedSched, pending: enrichedPend };
+  };
+
+  const { data, error, isLoading, mutate } = useSWR('user_debates_data', fetchDebatesData, {
+    revalidateOnFocus: false
+  });
+
+  const histories = data?.histories || [];
+  const scheduled = data?.scheduled || [];
+  const pending = data?.pending || [];
+  const loading = isLoading;
 
   const handleAccept = async (id: string) => {
     try {
@@ -215,8 +211,14 @@ function DebatesContent() {
       const item = pending.find(p => p.id === id);
       if (item) {
         // Optimistically update
-        setScheduled([...scheduled, item]);
-        setPending(pending.filter(p => p.id !== id));
+        mutate((currentData: any) => {
+          if (!currentData) return currentData;
+          return {
+            ...currentData,
+            scheduled: [...currentData.scheduled, item],
+            pending: currentData.pending.filter((p: any) => p.id !== id)
+          };
+        }, false);
       }
     } catch (err) {
       console.error("Failed to accept debate:", err);
@@ -237,7 +239,13 @@ function DebatesContent() {
           return;
         }
 
-        setPending(pending.filter(p => p.id !== id));
+        mutate((currentData: any) => {
+          if (!currentData) return currentData;
+          return {
+            ...currentData,
+            pending: currentData.pending.filter((p: any) => p.id !== id)
+          };
+        }, false);
       } catch (err) {
         console.error(`Failed to ${actionName}:`, err);
       }
@@ -254,8 +262,14 @@ function DebatesContent() {
         console.log(`DEBUG: Delete result:`, result);
 
         if (result.success) {
-          setHistories(prev => prev.filter(h => h.id !== id));
-          setScheduled(prev => prev.filter(s => s.id !== id));
+          mutate((currentData: any) => {
+            if (!currentData) return currentData;
+            return {
+              ...currentData,
+              histories: currentData.histories.filter((h: any) => h.id !== id),
+              scheduled: currentData.scheduled.filter((s: any) => s.id !== id)
+            }
+          }, false);
         } else {
           alert(`Failed to delete: ${result.error || 'Unknown error'}`);
         }
