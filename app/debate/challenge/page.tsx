@@ -78,7 +78,7 @@ function ChallengeFriendContent() {
         topic,
         pro_user_id: user.id,
         con_user_id: selectedFriend,
-        status: 'scheduled',
+        status: 'pending',
         mode: 'multi',
         time_limit: parseInt(timeLimit),
         scheduled_at: scheduledAt
@@ -89,7 +89,8 @@ function ChallengeFriendContent() {
       router.push(`/debates?tab=pending`);
     } else {
       setIsSubmitting(false);
-      alert('Failed to send challenge. Please try again.');
+      console.error('Supabase Insert Error:', error);
+      alert(`Failed to send challenge: ${error?.message || 'Unknown error'}. Please try again.`);
     }
   };
 

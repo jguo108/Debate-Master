@@ -26,7 +26,7 @@ import Sidebar from '@/components/Sidebar';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
-import { getAIResponse, saveMessage } from '../actions/debate';
+import { getAIResponse, saveMessage, evaluateDebate, forfeitDebate, concludeDebate } from '@/app/actions/debate';
 
 const supabase = createClient();
 
@@ -76,6 +76,7 @@ function ArenaContent() {
   const [isThinking, setIsThinking] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [winner, setWinner] = useState<string | null>(null);
+  const [evaluationReason, setEvaluationReason] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(debateDuration);
   const [isStarted, setIsStarted] = useState(false);
   const [isHistoryView, setIsHistoryView] = useState(false);
@@ -83,9 +84,10 @@ function ArenaContent() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initRef = useRef(false);
 
   const [historyTopic, setHistoryTopic] = useState(topic);
-  const [historyOpponent, setHistoryOpponent] = useState<any>(null);
+  const [historyOpponent, setHistoryOpponent] = useState<any>({ name: 'Loading...', avatar: 'https://picsum.photos/seed/placeholder/100/100' });
   const startTimeParam = searchParams.get('startTime');
 
   const selectedOpponent = React.useMemo(() => mode === 'multi'
@@ -96,15 +98,23 @@ function ArenaContent() {
   // -- Initialization --
   useEffect(() => {
     async function init() {
-      // 1. Get User Profile
+      if (initRef.current) return;
+      initRef.current = true;
+
+      // 1. Get User
       const { data: { user } } = await supabase.auth.getUser();
+      console.log("DEBUG: Current User:", user?.email);
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .single();
-        setUserProfile(profile);
+        console.log("DEBUG: Profile loaded:", !!profile);
+        setUserProfile(profile || { full_name: user.email?.split('@')[0] || 'User' });
+      } else {
+        console.warn("DEBUG: No user found during init");
+        // We might want to redirect to login if user is null and not in history view
       }
 
       // 2. Load or Create Debate
@@ -117,40 +127,94 @@ function ArenaContent() {
         setIsFinished(true);
         setDebateId(historyId);
 
-        const { data: debate } = await supabase.from('debates').select('*').eq('id', historyId).single();
+        const { data: debate } = await supabase
+          .from('debates')
+          .select(`*`)
+          .eq('id', historyId)
+          .single();
+
         if (debate) {
           setHistoryTopic(debate.topic);
-          setWinner(debate.winner_id); // This might need mapping to names
+          setEvaluationReason(debate.evaluation_reason);
+
+          const opponentId = debate.pro_user_id === user?.id ? debate.con_user_id : debate.pro_user_id;
+
+          let opponentName = 'AI Assistant';
+          let opponentAvatar = 'https://picsum.photos/seed/ai/100/100';
+
+          if (opponentId) {
+            const { data: opponentProfile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', opponentId).single();
+            if (opponentProfile) {
+              opponentName = opponentProfile.full_name || 'Opponent';
+              opponentAvatar = opponentProfile.avatar_url || `https://picsum.photos/seed/${opponentId}/100/100`;
+            }
+          }
+
+          setHistoryOpponent({ name: opponentName, avatar: opponentAvatar });
+
+          // Helper to resolve winner name
+          if (debate.winner_id === user?.id) {
+            setWinner('You');
+          } else if (debate.winner_id) {
+            setWinner(opponentName);
+          } else if (debate.evaluation_reason && debate.evaluation_reason.toLowerCase().includes('tie')) {
+            setWinner('Tie');
+          } else {
+            setWinner(opponentName); // Assuming AI won if null and not a tie
+          }
         }
 
         const { data: histMessages } = await supabase.from('messages').select('*').eq('debate_id', historyId).order('created_at', { ascending: true });
         if (histMessages) setMessages(histMessages);
       } else if (existingId) {
         setDebateId(existingId);
+        setIsStarted(true);
         const { data: initialMessages } = await supabase.from('messages').select('*').eq('debate_id', existingId).order('created_at', { ascending: true });
         if (initialMessages) setMessages(initialMessages);
-        setIsStarted(true);
-      } else if (mode === 'ai' && user) {
-        const { data: newDebate } = await supabase
-          .from('debates')
-          .insert({
-            topic,
-            time_limit: parseInt(timeLimitParam),
-            mode: 'ai',
-            status: 'live',
-            pro_user_id: user.id
-          })
-          .select().single();
-        if (newDebate) {
-          setDebateId(newDebate.id);
-          setIsStarted(true);
-          // Auto-start with a greeting
-          await saveMessage(newDebate.id, `I'm ready to debate: "${topic}".`, 'con', selectedOpponent.name);
+      } else if (mode === 'ai') {
+        if (user) {
+          console.log("DEBUG: Creating NEW AI Debate for topic:", topic);
+          const { data: newDebate, error } = await supabase
+            .from('debates')
+            .insert({
+              topic,
+              time_limit: parseInt(timeLimitParam),
+              mode: 'ai',
+              status: 'live',
+              pro_user_id: user.id
+            })
+            .select().single();
+
+          if (error) {
+            console.error("DEBUG: New AI Debate INSERT FAILED:", JSON.stringify(error));
+            console.error("RAW ERROR OBJECT:", error);
+            return;
+          }
+
+          if (newDebate) {
+            console.log("DEBUG: New AI Debate created with ID:", newDebate.id);
+            setDebateId(newDebate.id);
+            setIsStarted(true);
+
+            // Auto-start with a dynamic opening
+            setIsThinking(true);
+            await getAIResponse(newDebate.id, topic, []);
+            setIsThinking(false);
+
+            // Re-fetch to satisfy subscription race
+            const { data: finalMessages } = await supabase.from('messages').select('*').eq('debate_id', newDebate.id).order('created_at', { ascending: true });
+            if (finalMessages) setMessages(finalMessages);
+          }
+        } else {
+          console.error("DEBUG: Cannot create AI debate - no user session");
         }
+      } else {
+        // For other modes, we still want the UI to be interactive if topic is present
+        setIsStarted(true);
       }
     }
     init();
-  }, [searchParams, mode, topic, timeLimitParam, selectedOpponent.name]);
+  }, [searchParams, mode, topic, timeLimitParam]);
 
   // -- Real-time Sync --
   useEffect(() => {
@@ -170,10 +234,8 @@ function ArenaContent() {
           return [...prev, payload.new];
         });
 
-        // Trigger AI if it was the player's turn
-        if (payload.new.role === 'pro' && mode === 'ai') {
-          handleAIResponse(payload.new.content);
-        }
+        // We now trigger AI response directly from handleSend to be more reliable
+        // and avoid race conditions with the real-time subscription.
       })
       .subscribe();
 
@@ -198,17 +260,79 @@ function ArenaContent() {
   const handleAIResponse = async (userText: string) => {
     if (!debateId) return;
     setIsThinking(true);
-    const historyForAi = messages.map(m => ({ role: m.role, content: m.content }));
-    historyForAi.push({ role: 'pro', content: userText });
-    await getAIResponse(debateId, topic, historyForAi);
-    setIsThinking(false);
+    try {
+      const historyForAi = messages.map(m => ({ role: m.role, content: m.content }));
+      historyForAi.push({ role: 'pro', content: userText });
+
+      console.log("DEBUG: Calling getAIResponse for debate:", debateId);
+      const result = await getAIResponse(debateId, topic, historyForAi);
+
+      if (result.error) {
+        console.error("DEBUG: getAIResponse returned error:", result.error);
+      } else {
+        console.log("DEBUG: getAIResponse succeeded, refreshing messages...");
+        // Manually refresh messages immediately after AI response to ensure visibility
+        const { data: latest } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('debate_id', debateId)
+          .order('created_at', { ascending: true });
+
+        if (latest) {
+          console.log("DEBUG: Messages refreshed manually. Count:", latest.length);
+          setMessages(latest);
+        }
+      }
+    } catch (err) {
+      console.error("DEBUG: handleAIResponse exception:", err);
+    } finally {
+      setIsThinking(false);
+    }
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !debateId || !userProfile) return;
+    console.log("DEBUG: handleSend attempt. State:", {
+      input: !!input.trim(),
+      debateId,
+      userProfile: !!userProfile,
+      userName: userProfile?.full_name || userProfile?.username || 'Unknown'
+    });
+
+    if (!input.trim()) return;
+    if (!debateId) {
+      console.error("DEBUG: handleSend failed - debateId is null");
+      return;
+    }
+    if (!userProfile) {
+      console.error("DEBUG: handleSend failed - userProfile is null");
+      return;
+    }
+
     const content = input;
     setInput('');
-    await saveMessage(debateId, content, 'pro', userProfile.full_name || userProfile.username || 'User');
+
+    try {
+      const authorName = userProfile.full_name || userProfile.username || 'User';
+      console.log("DEBUG: Calling saveMessage...", { debateId, role: 'pro', authorName });
+
+      const result = await saveMessage(debateId, content, 'pro', authorName);
+
+      if (result.success) {
+        console.log("DEBUG: saveMessage success return");
+        // Manually trigger a refresh to be safe
+        const { data: latest } = await supabase.from('messages').select('*').eq('debate_id', debateId).order('created_at', { ascending: true });
+        if (latest) setMessages(latest);
+
+        // Trigger AI response immediately if in AI mode
+        if (mode === 'ai') {
+          await handleAIResponse(content);
+        }
+      } else {
+        console.error("DEBUG: saveMessage returned success:false", result);
+      }
+    } catch (err) {
+      console.error("DEBUG: handleSend exception:", err);
+    }
   };
 
   // -- Timer & Scroll --
@@ -251,7 +375,14 @@ function ArenaContent() {
     return false;
   };
 
-  const confirmExit = () => {
+  const confirmExit = async () => {
+    if (debateId) {
+      try {
+        await forfeitDebate(debateId);
+      } catch (err) {
+        console.error("Failed to forfeit debate:", err);
+      }
+    }
     router.push(pendingHref || '/debates');
     setShowExitModal(false);
   };
@@ -259,18 +390,32 @@ function ArenaContent() {
   useEffect(() => {
     if (!isFinished || isHistoryView || !debateId || !userProfile) return;
 
-    async function concludeDebate() {
-      const proCount = messages.filter(m => m.role === 'pro').length;
-      const conCount = messages.filter(m => m.role === 'con').length;
-      let finalWinner = proCount >= conCount ? (userProfile?.full_name || 'User') : selectedOpponent.name;
-      setWinner(finalWinner);
+    async function concludeDebateProcess() {
+      // Show "Calculating..." while waiting for AI
+      setWinner('Calculating...');
 
-      await supabase.from('debates').update({
-        status: 'finished',
-        winner_id: finalWinner === selectedOpponent.name ? 'opponent' : 'user'
-      }).eq('id', debateId);
+      const userProfileName = userProfile?.full_name || 'User';
+      const debateTopic = topic || 'Unknown Topic';
+      const evaluation = await evaluateDebate(debateId as string, debateTopic, messages, userProfileName, selectedOpponent.name);
+
+      let finalWinner = 'Tie';
+      let winnerId = 'none';
+
+      if (evaluation.winner === 'user') {
+        finalWinner = userProfileName;
+        winnerId = 'user';
+      } else if (evaluation.winner === 'opponent') {
+        finalWinner = selectedOpponent.name;
+        winnerId = 'opponent';
+      }
+
+      setWinner(finalWinner);
+      setEvaluationReason(evaluation.reasoning || 'No reasoning provided.');
+
+      // Update DB via Server Action to bypass RLS
+      await concludeDebate(debateId as string, winnerId, evaluation.reasoning || 'No reasoning provided.');
     }
-    concludeDebate();
+    concludeDebateProcess();
   }, [isFinished, isHistoryView, debateId, messages, userProfile, selectedOpponent.name]);
 
   const time = formatTime(timeLeft);
@@ -402,8 +547,10 @@ function ArenaContent() {
                       className={`flex flex-col ${msg.role === 'pro' ? 'items-start' : 'items-end'} gap-2 max-w-[80%] ${msg.role === 'con' ? 'ml-auto' : ''}`}
                     >
                       <div className={`flex items-center gap-2 mb-1 ${msg.role === 'con' ? 'flex-row-reverse' : ''}`}>
-                        <span className="text-xs font-bold text-slate-900">{msg.author}</span>
-                        <span className="text-[10px] text-slate-400 font-medium">{msg.timestamp}</span>
+                        <span className="text-xs font-bold text-slate-900">{msg.author_name || msg.author}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (msg.timestamp || '')}
+                        </span>
                       </div>
                       <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'pro'
                         ? 'bg-white border border-slate-100 rounded-tl-none text-slate-800'
@@ -454,9 +601,20 @@ function ArenaContent() {
                         <p className="text-slate-500 font-medium">The judges have reached a verdict.</p>
                       </div>
 
-                      <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Winner</p>
-                        <p className="text-2xl font-black text-[#585bf3]">{winner || 'Calculating...'}</p>
+                      <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 flex flex-col gap-4">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Winner</p>
+                          <p className="text-2xl font-black text-[#585bf3]">{winner}</p>
+                        </div>
+
+                        {evaluationReason && winner !== 'Calculating...' && (
+                          <div className="pt-2 border-t border-slate-200">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2 mt-2">Judge's Reasoning</p>
+                            <p className="text-sm font-medium text-slate-600 leading-relaxed text-left block">
+                              {evaluationReason}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="pt-4">
@@ -533,7 +691,7 @@ function ArenaContent() {
                   </div>
                   <button
                     onClick={handleSend}
-                    disabled={!isStarted || !input.trim() || isFinished}
+                    disabled={!isStarted || !input.trim() || isFinished || !debateId}
                     className="bg-[#585bf3] text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-[#585bf3]/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
                   >
                     <Send className="w-4 h-4" />

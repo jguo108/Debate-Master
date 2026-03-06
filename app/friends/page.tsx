@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Swords,
   X,
+  ArrowLeft,
   Check,
   Send,
   Loader2
@@ -19,7 +20,7 @@ import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
 
-const FriendCard = ({ name, personality, avatar, onChat, isOnline }: any) => (
+const FriendCard = ({ name, personality, avatar, onChat, isOnline, unreadCount = 0 }: any) => (
   <div className="bg-white p-5 rounded-2xl border border-slate-100 flex flex-col lg:flex-row items-center justify-between gap-6 hover:shadow-md transition-all">
     <div className="flex items-center gap-5 w-full lg:w-auto">
       <div className="relative">
@@ -56,20 +57,73 @@ const FriendCard = ({ name, personality, avatar, onChat, isOnline }: any) => (
       </Link>
       <button
         onClick={onChat}
-        className="p-2.5 rounded-xl bg-slate-50 text-[#585bf3] hover:bg-slate-100 transition-colors border border-slate-200"
+        className="relative p-2.5 rounded-xl bg-slate-50 text-[#585bf3] hover:bg-slate-100 transition-colors border border-slate-200"
       >
         <MessageSquare className="w-5 h-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] font-bold h-5 min-w-[20px] rounded-full flex items-center justify-center px-1.5 shadow-sm border-2 border-white pointer-events-none">
+            {unreadCount}
+          </span>
+        )}
       </button>
     </div>
   </div>
 );
 
-const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) => {
-  const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
-    { role: 'model', text: `Hey! I'm ${friend.name}. How's it going?` }
-  ]);
+const ChatModal = ({ user, friend, onClose }: { user: any, friend: any, onClose: () => void }) => {
+  const [messages, setMessages] = useState<{ id: string, senderId: string, text: string, createdAt: string }[]>([]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(true);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Fetch initial messages
+  React.useEffect(() => {
+    async function loadMessages() {
+      const { data, error } = await supabase
+        .from('direct_messages')
+        .select('*')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${user.id})`)
+        .order('created_at', { ascending: true });
+
+      if (data) {
+        setMessages(data.map(msg => ({
+          id: msg.id,
+          senderId: msg.sender_id,
+          text: msg.content,
+          createdAt: msg.created_at
+        })));
+      }
+      setLoading(false);
+    }
+    loadMessages();
+  }, [user.id, friend.id]);
+
+  // Subscribe to real-time new messages
+  React.useEffect(() => {
+    const channel = supabase
+      .channel(`chat_${user.id}_${friend.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'direct_messages',
+        filter: `receiver_id=eq.${user.id}`
+      }, (payload) => {
+        // Only add if it's from the friend we have open
+        if (payload.new.sender_id === friend.id) {
+          setMessages(prev => [...prev, {
+            id: payload.new.id,
+            senderId: payload.new.sender_id,
+            text: payload.new.content,
+            createdAt: payload.new.created_at
+          }]);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user.id, friend.id]);
 
   React.useEffect(() => {
     if (scrollRef.current) {
@@ -77,12 +131,28 @@ const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) =>
     }
   }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || !user) return;
 
     const userMessage = input.trim();
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
+
+    // Optimistic UI update
+    const tempId = crypto.randomUUID();
+    setMessages(prev => [...prev, {
+      id: tempId,
+      senderId: user.id,
+      text: userMessage,
+      createdAt: new Date().toISOString()
+    }]);
+
+    await supabase
+      .from('direct_messages')
+      .insert({
+        sender_id: user.id,
+        receiver_id: friend.id,
+        content: userMessage
+      });
   };
 
   return (
@@ -119,16 +189,25 @@ const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) =>
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50 no-scrollbar">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${msg.role === 'user'
-                ? 'bg-[#585bf3] text-white rounded-tr-none'
-                : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none shadow-sm'
-                }`}>
-                {msg.text}
-              </div>
-            </div>
-          ))}
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-slate-400">Loading messages...</div>
+          ) : messages.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-slate-400 text-sm">Say hello! 👋</div>
+          ) : (
+            messages.map((msg) => {
+              const isUser = msg.senderId === user.id;
+              return (
+                <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] p-3.5 rounded-2xl text-sm ${isUser
+                    ? 'bg-[#585bf3] text-white rounded-tr-none'
+                    : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none shadow-sm'
+                    }`}>
+                    {msg.text}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
         <div className="p-4 bg-white border-t border-slate-100">
@@ -166,6 +245,41 @@ export default function FriendManager() {
   const [chatFriend, setChatFriend] = useState<any>(null);
   const [modalSearchQuery, setModalSearchQuery] = useState('');
   const [mainSearchQuery, setMainSearchQuery] = useState('');
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [sentRequests, setSentRequests] = useState<string[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
+  const chatFriendRef = React.useRef(chatFriend);
+  React.useEffect(() => {
+    chatFriendRef.current = chatFriend;
+  }, [chatFriend]);
+
+  // Global subscription for incoming messages
+  React.useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`global_notifications_${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'direct_messages',
+        filter: `receiver_id=eq.${user.id}`
+      }, (payload) => {
+        const senderId = payload.new.sender_id;
+        // Don't increment if we are actively chatting with this person
+        if (chatFriendRef.current?.id !== senderId) {
+          setUnreadCounts(prev => ({
+            ...prev,
+            [senderId]: (prev[senderId] || 0) + 1
+          }));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   React.useEffect(() => {
     async function init() {
@@ -187,6 +301,23 @@ export default function FriendManager() {
         .eq('user_id', authUser.id)
         .eq('status', 'accepted');
 
+      // Fetch pending incoming requests
+      const { data: incomingData } = await supabase
+        .from('friendships')
+        .select(`
+          status,
+          requestor:user_id(id, full_name, avatar_url, specialty, rank)
+        `)
+        .eq('friend_id', authUser.id)
+        .eq('status', 'pending');
+
+      // Fetch pending outgoing requests
+      const { data: outgoingData } = await supabase
+        .from('friendships')
+        .select('friend_id')
+        .eq('user_id', authUser.id)
+        .eq('status', 'pending');
+
       if (friendshipData) {
         setFriends(friendshipData.map((f: any) => ({
           id: f.friend.id,
@@ -196,6 +327,21 @@ export default function FriendManager() {
           isOnline: Math.random() > 0.5 // Simulated for now
         })));
       }
+
+      if (incomingData) {
+        setPendingRequests(incomingData.map((f: any) => ({
+          id: f.requestor.id,
+          name: f.requestor.full_name || 'Anonymous',
+          personality: f.requestor.specialty || 'General Expert',
+          avatar: f.requestor.avatar_url || `https://picsum.photos/seed/${f.requestor.id}/200/200`,
+          isOnline: Math.random() > 0.5
+        })));
+      }
+
+      if (outgoingData) {
+        setSentRequests(outgoingData.map(f => f.friend_id));
+      }
+
       setLoading(false);
     }
     init();
@@ -239,20 +385,64 @@ export default function FriendManager() {
       .insert({
         user_id: user.id,
         friend_id: friend.id,
-        status: 'accepted' // Auto-accept for demo purposes
+        status: 'pending'
       });
 
+    if (error) {
+      console.error('Error adding friend:', error);
+      alert('Failed to send request: ' + error.message);
+      return;
+    }
+
+    setSentRequests([...sentRequests, friend.id]);
+  };
+
+  const acceptRequest = async (requestor: any) => {
+    if (!user) return;
+
+    // Update the original request
+    const { error: updateError } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .eq('user_id', requestor.id)
+      .eq('friend_id', user.id);
+
+    if (updateError) return;
+
+    // Insert reciprocal row
+    const { error: insertError } = await supabase
+      .from('friendships')
+      .insert({
+        user_id: user.id,
+        friend_id: requestor.id,
+        status: 'accepted'
+      });
+
+    if (!insertError) {
+      setPendingRequests(pendingRequests.filter(req => req.id !== requestor.id));
+      setFriends([...friends, requestor]);
+    }
+  };
+
+  const declineRequest = async (requestor: any) => {
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('friendships')
+      .delete()
+      .eq('user_id', requestor.id)
+      .eq('friend_id', user.id);
+
     if (!error) {
-      setFriends([...friends, friend]);
-      setPotentialFriends(potentialFriends.filter(pf => pf.id !== friend.id));
+      setPendingRequests(pendingRequests.filter(req => req.id !== requestor.id));
     }
   };
 
   return (
     <div className="bg-[#f6f6f8] min-h-screen font-sans text-slate-900">
       <AnimatePresence>
-        {chatFriend && (
-          <ChatModal friend={chatFriend} onClose={() => setChatFriend(null)} />
+        {chatFriend && user && (
+          <ChatModal user={user} friend={chatFriend} onClose={() => setChatFriend(null)} />
         )}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -312,9 +502,17 @@ export default function FriendManager() {
                         </div>
                         <button
                           onClick={() => addFriend(pf)}
-                          className="p-2 bg-[#585bf3]/10 text-[#585bf3] rounded-lg hover:bg-[#585bf3] hover:text-white transition-all"
+                          disabled={sentRequests.includes(pf.id)}
+                          className={`p-2 rounded-lg transition-all ${sentRequests.includes(pf.id)
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'bg-[#585bf3]/10 text-[#585bf3] hover:bg-[#585bf3] hover:text-white'
+                            }`}
                         >
-                          <UserPlus className="w-4 h-4" />
+                          {sentRequests.includes(pf.id) ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <UserPlus className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
                     ))
@@ -344,21 +542,41 @@ export default function FriendManager() {
 
           {/* Main Content Area */}
           <main className="flex-1 flex flex-col min-w-0 bg-[#f6f6f8] overflow-y-auto no-scrollbar">
-            <div className="max-w-5xl w-full mx-auto p-6 lg:p-10 space-y-8">
+            <div className="max-w-5xl w-full mx-auto pt-16 lg:pt-24 px-6 lg:px-10 pb-10 space-y-8">
               {/* Page Header & Search */}
-              <div className="space-y-6">
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                  <div className="space-y-1">
-                    <h1 className="text-3xl font-black tracking-tight text-slate-900">Friend Manager</h1>
-                    <p className="text-slate-500">Manage your circle of debate partners, coaches, and rivals.</p>
-                  </div>
-                  <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-[#585bf3] text-white font-bold rounded-xl hover:shadow-lg hover:shadow-[#585bf3]/30 transition-all"
+              <div className="space-y-8">
+                <div className="relative">
+                  <Link
+                    href="/mode-selection"
+                    className="absolute left-0 top-0 flex items-center gap-2 text-slate-500 hover:text-[#585bf3] font-bold transition-colors"
                   >
-                    <UserPlus className="w-5 h-5" />
-                    <span>Add New Friend</span>
-                  </button>
+                    <ArrowLeft className="w-5 h-5" />
+                    Back
+                  </Link>
+                  <div className="text-center">
+                    <motion.h1
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-4xl lg:text-5xl font-black tracking-tight text-slate-900 mb-4"
+                    >
+                      Friend Manager
+                    </motion.h1>
+                    <motion.p
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="text-slate-500 text-lg max-w-2xl mx-auto mb-8"
+                    >
+                      Manage your circle of debate partners, coaches, and rivals.
+                    </motion.p>
+                    <button
+                      onClick={() => setIsModalOpen(true)}
+                      className="inline-flex items-center gap-2 px-8 py-4 bg-[#585bf3] text-white font-bold rounded-2xl hover:shadow-lg hover:shadow-[#585bf3]/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <UserPlus className="w-5 h-5" />
+                      <span>Add New Partner</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
@@ -374,8 +592,40 @@ export default function FriendManager() {
                 </div>
               </div>
 
+              {/* Pending Requests */}
+              {pendingRequests.length > 0 && (
+                <div className="space-y-4 pt-4 border-t border-slate-200">
+                  <h3 className="font-bold text-slate-900 px-2 flex items-center gap-2">
+                    Pending Requests
+                    <span className="bg-[#585bf3] text-white text-xs px-2 py-0.5 rounded-full">{pendingRequests.length}</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pendingRequests.map(req => (
+                      <div key={req.id} className="bg-white p-5 rounded-2xl border border-[#585bf3]/30 flex flex-col gap-4 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-16 h-16 bg-[#585bf3]/5 rounded-bl-[100px] pointer-events-none" />
+                        <div className="flex items-center gap-4">
+                          <Image src={req.avatar} alt={req.name} width={48} height={48} className="rounded-full bg-slate-100 object-cover size-12 shadow-sm" />
+                          <div>
+                            <p className="font-bold text-slate-900 leading-tight">{req.name}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{req.personality}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-50">
+                          <button onClick={() => acceptRequest(req)} className="flex-1 py-2 bg-[#585bf3] text-white text-sm font-bold rounded-xl hover:bg-[#585bf3]/90 transition-colors shadow-lg shadow-[#585bf3]/20 flex items-center justify-center gap-1">
+                            <Check className="w-4 h-4" /> Accept
+                          </button>
+                          <button onClick={() => declineRequest(req)} className="py-2 px-3 bg-rose-50 text-rose-500 text-sm font-bold rounded-xl hover:bg-rose-100 transition-colors border border-rose-100 flex items-center justify-center">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Friends List */}
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 gap-4 pt-4 border-t border-slate-200">
                 {loading ? (
                   <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100">
                     <Loader2 className="w-10 h-10 text-[#585bf3] animate-spin mb-4" />
@@ -389,7 +639,11 @@ export default function FriendManager() {
                       personality={friend.personality}
                       avatar={friend.avatar}
                       isOnline={friend.isOnline}
-                      onChat={() => setChatFriend(friend)}
+                      unreadCount={unreadCounts[friend.id] || 0}
+                      onChat={() => {
+                        setChatFriend(friend);
+                        setUnreadCounts(prev => ({ ...prev, [friend.id]: 0 }));
+                      }}
                     />
                   ))
                 ) : (

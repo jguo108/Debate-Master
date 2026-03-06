@@ -7,6 +7,7 @@ import {
   Clock,
   User,
   ArrowRight,
+  ArrowLeft,
   Check,
   X,
   MessageSquare,
@@ -15,8 +16,10 @@ import {
   MoreVertical,
   Trophy,
   Mic2,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
+import { deleteDebate } from '@/app/actions/debate';
 import Link from 'next/link';
 import Image from 'next/image';
 import Sidebar from '@/components/Sidebar';
@@ -26,35 +29,7 @@ import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
 
-const initialHistories = [
-  {
-    id: 'h1',
-    title: "AI & Creative Rights",
-    outcome: "Won",
-    date: "Oct 12, 2023",
-    opponent: "Marcus Thorne",
-    image: "https://picsum.photos/seed/ai/600/400",
-    score: "88/100"
-  },
-  {
-    id: 'h2',
-    title: "Nuclear Energy Future",
-    outcome: "Lost",
-    date: "Sep 28, 2023",
-    opponent: "Sophia Rivers",
-    image: "https://picsum.photos/seed/nuclear/600/400",
-    score: "72/100"
-  },
-  {
-    id: 'h3',
-    title: "Space Exploration Tax",
-    outcome: "Won",
-    date: "Sep 15, 2023",
-    opponent: "Lisa Chen",
-    image: "https://picsum.photos/seed/space/600/400",
-    score: "94/100"
-  }
-];
+const initialHistories = [];
 
 const initialScheduled = [
   {
@@ -86,24 +61,7 @@ const initialScheduled = [
   }
 ];
 
-const initialPending = [
-  {
-    id: 'p1',
-    type: 'sent',
-    title: "Cryptocurrency Regulation",
-    opponent: "Sophia Rivers",
-    avatar: "https://picsum.photos/seed/sophia/100/100",
-    status: "Waiting for response"
-  },
-  {
-    id: 'p2',
-    type: 'received',
-    title: "Mental Health in Schools",
-    opponent: "Marcus Thorne",
-    avatar: "https://picsum.photos/seed/marcus/100/100",
-    status: "Invitation received"
-  }
-];
+const initialPending: any[] = [];
 
 function DebatesContent() {
   const searchParams = useSearchParams();
@@ -132,76 +90,180 @@ function DebatesContent() {
       // Fetch Histories (Concluded)
       const { data: hist } = await supabase
         .from('debates')
-        .select(`
-          *,
-          pro:pro_user_id(full_name, avatar_url),
-          con:con_user_id(full_name, avatar_url)
-        `)
+        .select(`*`)
         .eq('status', 'concluded')
         .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
 
       if (hist) {
-        setHistories(hist.map(d => ({
-          id: d.id,
-          title: d.topic,
-          outcome: d.winner_id === user.id ? 'Won' : 'Lost',
-          date: new Date(d.created_at).toLocaleDateString(),
-          opponent: d.pro_user_id === user.id ? (d.con?.full_name || 'AI Assistant') : (d.pro?.full_name || 'AI Assistant'),
-          image: `https://picsum.photos/seed/${d.id}/600/400`,
-          score: "N/A"
-        })));
+        const enrichedHist = await Promise.all(hist.map(async (d) => {
+          let opponentId = d.pro_user_id === user.id ? d.con_user_id : d.pro_user_id;
+          let opponentName = 'AI Assistant';
+          if (opponentId) {
+            const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', opponentId).single();
+            if (profile) opponentName = profile.full_name || 'Opponent';
+          }
+          return {
+            id: d.id,
+            title: d.topic,
+            outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
+            date: new Date(d.created_at).toLocaleDateString(),
+            opponent: opponentName,
+            image: `https://picsum.photos/seed/${d.id}/600/400`,
+            score: "N/A"
+          };
+        }));
+        setHistories(enrichedHist);
       }
 
-      // Fetch Scheduled (Live or Scheduled)
+      // Fetch Scheduled
       const { data: sched } = await supabase
         .from('debates')
-        .select(`
-          *,
-          pro:pro_user_id(full_name, avatar_url),
-          con:con_user_id(full_name, avatar_url)
-        `)
-        .in('status', ['live', 'scheduled'])
+        .select(`*`)
+        .eq('status', 'scheduled')
+        .neq('mode', 'ai')
+        .neq('status', 'cancelled')
         .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
 
       if (sched) {
-        setScheduled(sched.map(d => ({
-          id: d.id,
-          title: d.topic,
-          date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
-          time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          timeLimit: d.time_limit.toString(),
-          opponent: d.pro_user_id === user.id ? (d.con?.full_name || 'AI Assistant') : (d.pro?.full_name || 'AI Assistant'),
-          avatar: d.pro_user_id === user.id ? (d.con?.avatar_url || 'https://picsum.photos/seed/ai/100/100') : (d.pro?.avatar_url || 'https://picsum.photos/seed/ai/100/100'),
-          mode: d.mode
-        })));
+        const enrichedSched = await Promise.all(sched.map(async (d) => {
+          let opponentId = d.pro_user_id === user.id ? d.con_user_id : d.pro_user_id;
+          let opponentName = 'AI Assistant';
+          let opponentAvatar = 'https://picsum.photos/seed/ai/100/100';
+          if (opponentId) {
+            const { data: profile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', opponentId).single();
+            if (profile) {
+              opponentName = profile.full_name || 'Opponent';
+              opponentAvatar = profile.avatar_url || `https://picsum.photos/seed/${opponentId}/100/100`;
+            }
+          }
+
+          const scheduledTime = new Date(d.scheduled_at || d.created_at).getTime();
+          const limitMs = (d.time_limit || 10) * 60 * 1000;
+          const isOverdue = Date.now() > (scheduledTime + limitMs);
+
+          return {
+            id: d.id,
+            title: d.topic,
+            date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
+            time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timeLimit: d.time_limit.toString(),
+            opponent: opponentName,
+            avatar: opponentAvatar,
+            mode: d.mode,
+            isOverdue
+          };
+        }));
+        setScheduled(enrichedSched);
       }
 
-      // Simulation for Pending for now (or we could add a 'pending' status to debates)
-      setPending(initialPending);
+      // Fetch Pending
+      const { data: pend } = await supabase
+        .from('debates')
+        .select(`*`)
+        .eq('status', 'pending')
+        .neq('status', 'cancelled')
+        .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+
+      if (pend) {
+        const enrichedPend = await Promise.all(pend.map(async (d) => {
+          const isSent = d.pro_user_id === user.id;
+          let opponentId = isSent ? d.con_user_id : d.pro_user_id;
+          let opponentName = 'Anonymous';
+          let opponentAvatar = 'https://picsum.photos/seed/anon/100/100';
+
+          if (opponentId) {
+            const { data: profile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', opponentId).single();
+            if (profile) {
+              opponentName = profile.full_name || 'Anonymous';
+              opponentAvatar = profile.avatar_url || `https://picsum.photos/seed/${opponentId}/100/100`;
+            }
+          }
+
+          return {
+            id: d.id,
+            title: d.topic,
+            date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
+            time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timeLimit: d.time_limit?.toString() || "10",
+            opponent: opponentName,
+            avatar: opponentAvatar,
+            type: isSent ? 'sent' : 'received',
+            status: d.status
+          };
+        }));
+        setPending(enrichedPend);
+      } else {
+        setPending([]);
+      }
       setLoading(false);
     }
     fetchData();
   }, [activeTab]);
 
-  const handleAccept = (id: string) => {
-    // In a real app, this would move to scheduled
-    const item = pending.find(p => p.id === id);
-    if (item) {
-      setScheduled([...scheduled, {
-        id: `s-accepted-${item.id}`,
-        title: item.title,
-        date: "TBD",
-        time: "TBD",
-        timeLimit: (item as any).timeLimit || "10",
-        opponent: item.opponent,
-        avatar: item.avatar
-      }]);
-      setPending(pending.filter(p => p.id !== id));
+  const handleAccept = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('debates')
+        .update({ status: 'scheduled' })
+        .eq('id', id);
+
+      if (error) {
+        console.error("Failed to accept debate:", error);
+        return;
+      }
+
+      const item = pending.find(p => p.id === id);
+      if (item) {
+        // Optimistically update
+        setScheduled([...scheduled, item]);
+        setPending(pending.filter(p => p.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to accept debate:", err);
     }
   };
 
-  const handleDecline = (id: string) => {
-    setPending(pending.filter(p => p.id !== id));
+  const handleDecline = async (id: string, isSenderCancel = false) => {
+    const actionName = isSenderCancel ? "cancel request" : "decline debate";
+    if (confirm(`Are you sure you want to ${actionName}?`)) {
+      try {
+        const { error } = await supabase
+          .from('debates')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          console.error(`Failed to ${actionName}:`, error);
+          return;
+        }
+
+        setPending(pending.filter(p => p.id !== id));
+      } catch (err) {
+        console.error(`Failed to ${actionName}:`, err);
+      }
+    }
+  };
+
+  const handleDeleteHistory = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (confirm("Are you sure you want to delete this debate?")) {
+      try {
+        console.log(`DEBUG: Attempting to delete debate ${id}`);
+        const result = await deleteDebate(id);
+        console.log(`DEBUG: Delete result:`, result);
+
+        if (result.success) {
+          setHistories(prev => prev.filter(h => h.id !== id));
+          setScheduled(prev => prev.filter(s => s.id !== id));
+        } else {
+          alert(`Failed to delete: ${result.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        console.error("Failed to delete debate:", err);
+        alert("An unexpected error occurred while deleting the debate.");
+      }
+    }
   };
 
   return (
@@ -209,44 +271,68 @@ function DebatesContent() {
       <Sidebar />
 
       <main className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
-        <div className="px-8 py-10 max-w-6xl mx-auto w-full">
+        <div className="px-8 pt-16 lg:pt-24 pb-10 max-w-6xl mx-auto w-full">
           {/* Header */}
-          <div className="mb-10">
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Debates</h1>
-            <p className="text-slate-500 text-lg mt-2">Manage your past, present, and future intellectual battles.</p>
+          <div className="mb-12 relative">
+            <Link
+              href="/mode-selection"
+              className="absolute left-0 top-0 flex items-center gap-2 text-slate-500 hover:text-[#585bf3] font-bold transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              Back
+            </Link>
+            <div className="text-center">
+              <motion.h1
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tight mb-4"
+              >
+                Debates
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="text-slate-500 text-lg max-w-2xl mx-auto"
+              >
+                Manage your past, present, and future intellectual battles.
+              </motion.p>
+            </div>
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex gap-4 mb-8 p-1.5 bg-white rounded-2xl border border-slate-200 w-fit">
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'history' ? 'bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-            >
-              <History className="w-4 h-4" />
-              History
-            </button>
-            <button
-              onClick={() => setActiveTab('scheduled')}
-              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'scheduled' ? 'bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-            >
-              <Calendar className="w-4 h-4" />
-              Scheduled
-            </button>
-            <button
-              onClick={() => setActiveTab('pending')}
-              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'pending' ? 'bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-            >
-              <Clock className="w-4 h-4" />
-              Pending
-              {pending.length > 0 && (
-                <span className={`size-5 rounded-full flex items-center justify-center text-[10px] ${activeTab === 'pending' ? 'bg-white text-[#585bf3]' : 'bg-[#585bf3] text-white'}`}>
-                  {pending.length}
-                </span>
-              )}
-            </button>
+          <div className="flex justify-center mb-8">
+            <div className="flex gap-4 p-1.5 bg-white rounded-2xl border border-slate-200 w-fit">
+              <button
+                onClick={() => setActiveTab('history')}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'history' ? 'bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+              >
+                <History className="w-4 h-4" />
+                History
+              </button>
+              <button
+                onClick={() => setActiveTab('scheduled')}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'scheduled' ? 'bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+              >
+                <Calendar className="w-4 h-4" />
+                Scheduled
+              </button>
+              <button
+                onClick={() => setActiveTab('pending')}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'pending' ? 'bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' : 'text-slate-500 hover:bg-slate-50'
+                  }`}
+              >
+                <Clock className="w-4 h-4" />
+                Pending
+                {pending.length > 0 && (
+                  <span className={`size-5 rounded-full flex items-center justify-center text-[10px] ${activeTab === 'pending' ? 'bg-white text-[#585bf3]' : 'bg-[#585bf3] text-white'}`}>
+                    {pending.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Content Area */}
@@ -264,38 +350,58 @@ function DebatesContent() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                   >
-                    {histories.map((item) => (
-                      <Link
-                        key={item.id}
-                        href={`/arena?historyId=${item.id}`}
-                        className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all group cursor-pointer"
-                      >
-                        <div className="relative h-40 w-full rounded-2xl overflow-hidden mb-4">
-                          <Image
-                            src={item.image}
-                            alt={item.title}
-                            fill
-                            className="object-cover group-hover:scale-110 transition-transform duration-500"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${item.outcome === 'Won' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-                            }`}>
-                            {item.outcome}
-                          </div>
-                        </div>
-                        <h3 className="text-lg font-bold text-slate-900 mb-1">{item.title}</h3>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mb-4">
-                          <Calendar className="w-3.5 h-3.5" /> {item.date} • vs {item.opponent}
-                        </div>
-                        <div className="flex items-center justify-end pt-4 border-t border-slate-50">
-                          <span className="text-[10px] font-bold text-[#585bf3] uppercase tracking-widest flex items-center gap-1">
-                            View History <ArrowRight className="w-3 h-3" />
-                          </span>
-                        </div>
-                      </Link>
-                    ))}
+                    {histories.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {histories.map((item) => (
+                          <Link
+                            key={item.id}
+                            href={`/arena?historyId=${item.id}`}
+                            className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+                          >
+                            <div className="relative h-40 w-full rounded-2xl overflow-hidden mb-4">
+                              <Image
+                                src={item.image}
+                                alt={item.title}
+                                fill
+                                className="object-cover group-hover:scale-110 transition-transform duration-500"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${item.outcome === 'Won' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                                }`}>
+                                {item.outcome}
+                              </div>
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 mb-1">{item.title}</h3>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 mb-4">
+                              <Calendar className="w-3.5 h-3.5" /> {item.date} • vs {item.opponent}
+                            </div>
+                            <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                              <button
+                                onClick={(e) => handleDeleteHistory(e, item.id)}
+                                className="text-slate-400 hover:text-rose-500 transition-colors p-1"
+                                title="Delete History"
+                                type="button"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <span className="text-[10px] font-bold text-[#585bf3] uppercase tracking-widest flex items-center gap-1">
+                                View History <ArrowRight className="w-3 h-3" />
+                              </span>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
+                        <History className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                        <h3 className="text-xl font-bold text-slate-900">No debate history</h3>
+                        <p className="text-slate-500 mt-2">Your completed battles will appear here.</p>
+                        <Link href="/mode-selection" className="mt-6 inline-block text-[#585bf3] font-bold hover:underline">
+                          Start a new debate
+                        </Link>
+                      </div>
+                    )}
                   </motion.div>
                 )}
 
@@ -308,13 +414,20 @@ function DebatesContent() {
                     className="space-y-4"
                   >
                     {scheduled.length > 0 ? scheduled.map((item) => (
-                      <div key={item.id} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+                      <div key={item.id} className={`bg-white rounded-3xl p-6 border shadow-sm flex items-center justify-between ${item.isOverdue ? 'border-amber-100 opacity-80' : 'border-slate-100'}`}>
                         <div className="flex items-center gap-6">
-                          <div className="size-16 rounded-2xl bg-slate-50 flex items-center justify-center text-[#585bf3]">
+                          <div className={`size-16 rounded-2xl flex items-center justify-center ${item.isOverdue ? 'bg-amber-50 text-amber-500' : 'bg-slate-50 text-[#585bf3]'}`}>
                             <Calendar className="w-8 h-8" />
                           </div>
                           <div>
-                            <h3 className="text-xl font-bold text-slate-900">{item.title}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-xl font-bold text-slate-900">{item.title}</h3>
+                              {item.isOverdue && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-600">
+                                  Overdue
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-4 mt-1">
                               <div className="flex items-center gap-1.5 text-sm text-slate-500 font-medium">
                                 <Clock className="w-4 h-4" />
@@ -336,12 +449,22 @@ function DebatesContent() {
                             className="size-10 rounded-full border-2 border-white shadow-sm"
                             referrerPolicy="no-referrer"
                           />
-                          <Link
-                            href={`/arena?id=${item.id}&mode=${item.mode || 'ai'}`}
-                            className="px-6 py-2.5 bg-[#585bf3] text-white rounded-xl text-sm font-bold hover:bg-[#585bf3]/90 transition-all shadow-lg shadow-[#585bf3]/20"
-                          >
-                            Enter
-                          </Link>
+                          {item.isOverdue ? (
+                            <button
+                              onClick={() => handleDeleteHistory({ preventDefault: () => { }, stopPropagation: () => { } } as any, item.id)}
+                              className="size-11 bg-rose-500 text-white rounded-xl flex items-center justify-center hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20"
+                              title="Delete Overdue Debate"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          ) : (
+                            <Link
+                              href={`/arena?id=${item.id}&mode=${item.mode || 'ai'}`}
+                              className="px-6 py-2.5 bg-[#585bf3] text-white rounded-xl text-sm font-bold hover:bg-[#585bf3]/90 transition-all shadow-lg shadow-[#585bf3]/20"
+                            >
+                              Enter
+                            </Link>
+                          )}
                         </div>
                       </div>
                     )) : (
@@ -403,7 +526,7 @@ function DebatesContent() {
                             </>
                           ) : (
                             <button
-                              onClick={() => handleDecline(item.id)}
+                              onClick={() => handleDecline(item.id, true)}
                               className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all"
                             >
                               Cancel Request
@@ -414,8 +537,8 @@ function DebatesContent() {
                     )) : (
                       <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
                         <Clock className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                        <h3 className="text-xl font-bold text-slate-900">No pending invitations</h3>
-                        <p className="text-slate-500 mt-2">All your requests have been handled.</p>
+                        <h3 className="text-xl font-bold text-slate-900">No pending requests</h3>
+                        <p className="text-slate-500 mt-2">All your invitations have been handled.</p>
                       </div>
                     )}
                   </motion.div>
@@ -424,8 +547,8 @@ function DebatesContent() {
             )}
           </div>
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }
 
