@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-plus-jakarta);
+}
+
+@layer base {
+  body {
+    @apply bg-[#f6f6f8] text-slate-900;
+  }
+}
+
+.soft-pop-gradient {
+  background: linear-gradient(135deg, #585bf3 0%, #a2a4ff 100%);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
