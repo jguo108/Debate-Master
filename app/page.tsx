@@ -1,13 +1,42 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Mail, Lock, Eye, ArrowRight, LogIn, Shield } from 'lucide-react';
-import Link from 'next/link';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Mail, Lock, Eye, EyeOff, Loader2, LogIn, Shield, User } from 'lucide-react';
 import Image from 'next/image';
+import { login, signup } from './actions/auth';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setMessage(null);
+
+    const formData = new FormData(e.currentTarget);
+
+    if (isLogin) {
+      const result = await login(formData);
+      if (result?.error) {
+        setError(result.error);
+        setIsLoading(false);
+      }
+    } else {
+      const result = await signup(formData);
+      if (result?.error) {
+        setError(result.error);
+      } else if (result?.success) {
+        setMessage(result.success);
+      }
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f6f6f8]">
@@ -17,7 +46,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 soft-pop-gradient opacity-90"></div>
         <div className="absolute -top-20 -left-20 h-96 w-96 rounded-full bg-white/10 blur-3xl"></div>
         <div className="absolute bottom-40 right-10 h-64 w-64 rounded-full bg-[#585bf3]/30 blur-3xl"></div>
-        
+
         <div className="relative z-10 p-16">
           {/* Logo Section */}
           <div className="flex items-center gap-3 text-white">
@@ -30,14 +59,14 @@ export default function LoginPage() {
 
         <div className="relative z-10 px-16 pb-24">
           <div className="max-w-xl">
-            <motion.span 
+            <motion.span
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="mb-4 inline-block rounded-full bg-white/20 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-white backdrop-blur-md"
             >
               Evolution of Discourse
             </motion.span>
-            <motion.h1 
+            <motion.h1
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
@@ -45,7 +74,7 @@ export default function LoginPage() {
             >
               Master the <br />Argument
             </motion.h1>
-            <motion.p 
+            <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
@@ -53,8 +82,8 @@ export default function LoginPage() {
             >
               Join the world&apos;s premier platform for high-stakes intellectual discourse. Refine your logic, challenge your peers, and rise through the ranks in our global arena.
             </motion.p>
-            
-            <motion.div 
+
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
@@ -62,9 +91,9 @@ export default function LoginPage() {
             >
               <div className="flex -space-x-3">
                 {[1, 2, 3].map((i) => (
-                  <Image 
+                  <Image
                     key={i}
-                    className="h-10 w-10 rounded-full border-2 border-white" 
+                    className="h-10 w-10 rounded-full border-2 border-white"
                     src={`https://picsum.photos/seed/user${i}/100/100`}
                     alt="User avatar"
                     width={40}
@@ -100,24 +129,80 @@ export default function LoginPage() {
             <span className="text-xl font-bold">Debate Master</span>
           </div>
 
-          <div className="text-center lg:text-left">
-            <h2 className="text-3xl font-extrabold text-slate-900">Welcome back</h2>
-            <p className="mt-2 text-slate-500">Log in to your account to continue your climb.</p>
-          </div>
+          <motion.div
+            key={isLogin ? 'login' : 'signup'}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="text-center lg:text-left"
+          >
+            <h2 className="text-3xl font-extrabold text-slate-900">
+              {isLogin ? 'Welcome back' : 'Create Account'}
+            </h2>
+            <p className="mt-2 text-slate-500">
+              {isLogin ? 'Log in to your account to continue your climb.' : 'Every legend starts with a single argument.'}
+            </p>
+          </motion.div>
 
-          <div className="mt-8 space-y-6">
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-3 rounded-xl text-sm font-medium"
+            >
+              {error}
+            </motion.div>
+          )}
+
+          {message && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-emerald-50 border border-emerald-100 text-emerald-600 px-4 py-3 rounded-xl text-sm font-medium"
+            >
+              {message}
+            </motion.div>
+          )}
+
+          <form onSubmit={handleSubmit} className="mt-8 space-y-6">
             <div className="space-y-4">
+              <AnimatePresence>
+                {!isLogin && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                  >
+                    <label className="block text-sm font-semibold text-slate-700 mb-2" htmlFor="full_name">Full Name</label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+                        <User className="w-5 h-5" />
+                      </div>
+                      <input
+                        className="block w-full rounded-xl border border-slate-200 bg-white px-11 py-3.5 text-slate-900 focus:border-[#585bf3] focus:ring-[#585bf3]/20 sm:text-sm transition-all shadow-sm"
+                        id="full_name"
+                        name="full_name"
+                        placeholder="Alex Rivera"
+                        type="text"
+                        required={!isLogin}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2" htmlFor="email">Email Address</label>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
                     <Mail className="w-5 h-5" />
                   </div>
-                  <input 
+                  <input
                     className="block w-full rounded-xl border border-slate-200 bg-white px-11 py-3.5 text-slate-900 focus:border-[#585bf3] focus:ring-[#585bf3]/20 sm:text-sm transition-all shadow-sm"
-                    id="email" 
-                    placeholder="name@company.com" 
-                    type="email" 
+                    id="email"
+                    name="email"
+                    placeholder="name@company.com"
+                    type="email"
+                    required
                   />
                 </div>
               </div>
@@ -130,47 +215,66 @@ export default function LoginPage() {
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
                     <Lock className="w-5 h-5" />
                   </div>
-                  <input 
+                  <input
                     className="block w-full rounded-xl border border-slate-200 bg-white px-11 py-3.5 text-slate-900 focus:border-[#585bf3] focus:ring-[#585bf3]/20 sm:text-sm transition-all shadow-sm"
-                    id="password" 
-                    placeholder="••••••••" 
-                    type={showPassword ? "text" : "password"} 
+                    id="password"
+                    name="password"
+                    placeholder="••••••••"
+                    type={showPassword ? "text" : "password"}
+                    required
                   />
-                  <button 
+                  <button
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-4 text-slate-400 hover:text-slate-600" 
+                    className="absolute inset-y-0 right-0 flex items-center pr-4 text-slate-400 hover:text-slate-600"
                     type="button"
                   >
-                    <Eye className="w-5 h-5" />
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center">
-              <input 
-                className="h-4 w-4 rounded border-slate-300 text-[#585bf3] focus:ring-[#585bf3]" 
-                id="remember-me" 
-                type="checkbox" 
-              />
-              <label className="ml-2 block text-sm text-slate-600" htmlFor="remember-me">Keep me logged in</label>
-            </div>
+            {isLogin && (
+              <div className="flex items-center">
+                <input
+                  className="h-4 w-4 rounded border-slate-300 text-[#585bf3] focus:ring-[#585bf3]"
+                  id="remember-me"
+                  type="checkbox"
+                />
+                <label className="ml-2 block text-sm text-slate-600" htmlFor="remember-me">Keep me logged in</label>
+              </div>
+            )}
 
             <div className="pt-2">
-              <Link href="/mode-selection">
-                <button className="group relative flex w-full justify-center rounded-full bg-[#585bf3] py-4 px-4 text-sm font-bold text-white transition-all hover:bg-[#585bf3]/90 focus:outline-none focus:ring-2 focus:ring-[#585bf3] focus:ring-offset-2 shadow-lg shadow-[#585bf3]/25">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="group relative flex w-full justify-center rounded-full bg-[#585bf3] py-4 px-4 text-sm font-bold text-white transition-all hover:bg-[#585bf3]/90 focus:outline-none focus:ring-2 focus:ring-[#585bf3] focus:ring-offset-2 shadow-lg shadow-[#585bf3]/25 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                ) : (
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3">
                     <LogIn className="w-5 h-5 text-white/50 group-hover:text-white transition-colors" />
                   </span>
-                  Sign In to Debate
-                </button>
-              </Link>
+                )}
+                {isLogin ? 'Sign In to Debate' : 'Get Started'}
+              </button>
             </div>
-          </div>
+          </form>
 
           <p className="mt-10 text-center text-sm text-slate-500">
-            Don&apos;t have an account? 
-            <a className="font-bold text-[#585bf3] hover:underline ml-1" href="#">Sign up now</a>
+            {isLogin ? "Don't have an account?" : "Already a debater?"}
+            <button
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError(null);
+                setMessage(null);
+              }}
+              className="font-bold text-[#585bf3] hover:underline ml-1"
+            >
+              {isLogin ? 'Sign up now' : 'Login here'}
+            </button>
           </p>
         </div>
       </div>

@@ -1,32 +1,34 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Shield, 
-  Bell, 
-  Timer, 
-  Quote, 
-  FileText, 
-  PenLine, 
-  Gavel, 
-  LogOut, 
-  Send, 
+import {
+  Shield,
+  Bell,
+  Timer,
+  Quote,
+  FileText,
+  PenLine,
+  Gavel,
+  LogOut,
+  Send,
   Paperclip,
   Flame,
   Clapperboard,
   HelpCircle,
   Trash2,
-  Trophy
+  Trophy,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createClient } from '@/lib/supabase/client';
+import { getAIResponse, saveMessage } from '../actions/debate';
 
-const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+const supabase = createClient();
 
 const friends = [
   { id: '1', name: 'Sophia Rivers', rank: 'Philosopher King', avatar: 'https://picsum.photos/seed/sophia/100/100' },
@@ -63,166 +65,122 @@ function ArenaContent() {
   const topic = searchParams.get('topic') || 'The Impact of AI on Creative Arts';
   const modelId = searchParams.get('model') || 'gemini';
   const opponentId = searchParams.get('opponent') || '1';
-  const startTimeParam = searchParams.get('startTime');
   const timeLimitParam = searchParams.get('timeLimit') || '10';
   const debateDuration = parseInt(timeLimitParam) * 60;
 
-  const [isFinished, setIsFinished] = useState(false);
-  const [winner, setWinner] = useState<string | null>(null);
-  const [isHistoryView, setIsHistoryView] = useState(false);
-  const [isStarted, setIsStarted] = useState(() => {
-    if (!startTimeParam) return true;
-    const now = new Date();
-    const startTime = new Date(startTimeParam);
-    return now.getTime() >= startTime.getTime();
-  });
-  const [timeLeft, setTimeLeft] = useState(() => {
-    if (!startTimeParam) return debateDuration;
-    const now = new Date();
-    const startTime = new Date(startTimeParam);
-    const diff = startTime.getTime() - now.getTime();
-    
-    if (diff > 0) {
-      return Math.floor(diff / 1000);
-    } else {
-      const elapsed = Math.floor(Math.abs(diff) / 1000);
-      const remaining = debateDuration - elapsed;
-      return remaining > 0 ? remaining : 0;
-    }
-  });
-  const [isOpponentOnline, setIsOpponentOnline] = useState(true);
+  // -- State --
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [debateId, setDebateId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const [winner, setWinner] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(debateDuration);
+  const [isStarted, setIsStarted] = useState(false);
+  const [isHistoryView, setIsHistoryView] = useState(false);
+  const [isOpponentOnline, setIsOpponentOnline] = useState(true);
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const selectedOpponent = React.useMemo(() => mode === 'multi' 
+  const [historyTopic, setHistoryTopic] = useState(topic);
+  const [historyOpponent, setHistoryOpponent] = useState<any>(null);
+  const startTimeParam = searchParams.get('startTime');
+
+  const selectedOpponent = React.useMemo(() => mode === 'multi'
     ? friends.find(f => f.id === opponentId) || friends[0]
     : { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', rank: 'AI Model', avatar: 'https://picsum.photos/seed/ai-bot/100/100' },
-  [mode, opponentId, modelId]);
+    [mode, opponentId, modelId]);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'pro',
-      author: 'Alex Rivera',
-      content: `I'm ready to debate the topic: "${topic}". I believe the affirmative position holds the most logical weight.`,
-      timestamp: '14:05'
-    },
-    {
-      id: '2',
-      role: 'con',
-      author: selectedOpponent.name,
-      content: `Interesting opening, Alex. However, regarding "${topic}", there are significant counter-arguments that must be addressed. I'll be representing the opposition.`,
-      timestamp: '14:08'
-    }
-  ]);
-
-  const [historyTopic, setHistoryTopic] = useState(topic);
-  const [historyOpponent, setHistoryOpponent] = useState(selectedOpponent);
-
+  // -- Initialization --
   useEffect(() => {
-    const historyId = searchParams.get('historyId');
-    if (historyId) {
-      const savedHistory = JSON.parse(localStorage.getItem('debate_history') || '[]');
-      const historyItem = savedHistory.find((h: any) => h.id === historyId);
-      if (historyItem) {
-        setMessages(historyItem.messages);
-        setWinner(historyItem.outcome === 'Won' ? 'Alex Rivera' : historyItem.opponent);
-        setIsFinished(true);
-        setIsStarted(true);
+    async function init() {
+      // 1. Get User Profile
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        setUserProfile(profile);
+      }
+
+      // 2. Load or Create Debate
+      const existingId = searchParams.get('id');
+      const historyId = searchParams.get('historyId');
+
+      if (historyId) {
         setIsHistoryView(true);
-        setHistoryTopic(historyItem.title);
-        setHistoryOpponent({
-          name: historyItem.opponent,
-          rank: 'Debater',
-          avatar: historyItem.opponentAvatar || 'https://picsum.photos/seed/ai-bot/100/100'
-        });
-      }
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (isHistoryView) return; // Don't run timer in history view
-    const timer = setInterval(() => {
-      const now = new Date();
-      
-      if (startTimeParam) {
-        const startTime = new Date(startTimeParam);
-        const diff = startTime.getTime() - now.getTime();
-
-        if (diff > 0) {
-          // Debate hasn't started yet
-          setIsStarted(false);
-          setTimeLeft(Math.floor(diff / 1000));
-        } else {
-          // Debate has started
-          setIsStarted(true);
-          const elapsed = Math.floor(Math.abs(diff) / 1000);
-          const remaining = debateDuration - elapsed;
-          if (remaining <= 0) {
-            setIsStarted(true);
-            setTimeLeft(0);
-            setIsFinished(true);
-          } else {
-            setIsStarted(true);
-            setTimeLeft(remaining);
-          }
-        }
-      } else {
-        // No start time (AI mode or direct entry), just start the timer
         setIsStarted(true);
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            setIsFinished(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }
-    }, 1000);
+        setIsFinished(true);
+        setDebateId(historyId);
 
-    return () => clearInterval(timer);
-  }, [startTimeParam, debateDuration, isHistoryView]);
+        const { data: debate } = await supabase.from('debates').select('*').eq('id', historyId).single();
+        if (debate) {
+          setHistoryTopic(debate.topic);
+          setWinner(debate.winner_id); // This might need mapping to names
+        }
 
-  useEffect(() => {
-    if (isHistoryView) return; // Don't save again if viewing history
-    if (isFinished && !winner) {
-      // Determine winner based on message count or random for now
-      const proCount = messages.filter(m => m.role === 'pro').length;
-      const conCount = messages.filter(m => m.role === 'con').length;
-      
-      let debateWinner = '';
-      if (proCount > conCount) debateWinner = 'Alex Rivera';
-      else if (conCount > proCount) debateWinner = selectedOpponent.name;
-      else debateWinner = Math.random() > 0.5 ? 'Alex Rivera' : selectedOpponent.name;
-      
-      setWinner(debateWinner);
-
-      // Save to history
-      const historyItem = {
-        id: `h-${Date.now()}`,
-        title: topic,
-        outcome: debateWinner === 'Alex Rivera' ? 'Won' : 'Lost',
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        opponent: selectedOpponent.name,
-        image: `https://picsum.photos/seed/${topic.length}/600/400`,
-        score: `${Math.floor(Math.random() * 20) + 75}/100`,
-        messages: messages,
-        opponentAvatar: selectedOpponent.avatar
-      };
-
-      const savedHistory = JSON.parse(localStorage.getItem('debate_history') || '[]');
-      localStorage.setItem('debate_history', JSON.stringify([historyItem, ...savedHistory]));
-      
-      // Also mark this scheduled debate as finished if it was one
-      if (searchParams.get('opponent')) {
-        const finishedDebates = JSON.parse(localStorage.getItem('finished_debates') || '[]');
-        localStorage.setItem('finished_debates', JSON.stringify([...finishedDebates, searchParams.get('opponent')]));
+        const { data: histMessages } = await supabase.from('messages').select('*').eq('debate_id', historyId).order('created_at', { ascending: true });
+        if (histMessages) setMessages(histMessages);
+      } else if (existingId) {
+        setDebateId(existingId);
+        const { data: initialMessages } = await supabase.from('messages').select('*').eq('debate_id', existingId).order('created_at', { ascending: true });
+        if (initialMessages) setMessages(initialMessages);
+        setIsStarted(true);
+      } else if (mode === 'ai' && user) {
+        const { data: newDebate } = await supabase
+          .from('debates')
+          .insert({
+            topic,
+            time_limit: parseInt(timeLimitParam),
+            mode: 'ai',
+            status: 'live',
+            pro_user_id: user.id
+          })
+          .select().single();
+        if (newDebate) {
+          setDebateId(newDebate.id);
+          setIsStarted(true);
+          // Auto-start with a greeting
+          await saveMessage(newDebate.id, `I'm ready to debate: "${topic}".`, 'con', selectedOpponent.name);
+        }
       }
     }
-  }, [isFinished, winner, messages, selectedOpponent, topic, searchParams, isHistoryView]);
+    init();
+  }, [searchParams, mode, topic, timeLimitParam, selectedOpponent.name]);
+
+  // -- Real-time Sync --
+  useEffect(() => {
+    if (!debateId) return;
+
+    const channel = supabase
+      .channel(`arena-${debateId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `debate_id=eq.${debateId}`
+      }, (payload) => {
+        setMessages(prev => {
+          // Prevent duplicates from multiple event streams
+          if (prev.some(m => m.id === payload.new.id)) return prev;
+          return [...prev, payload.new];
+        });
+
+        // Trigger AI if it was the player's turn
+        if (payload.new.role === 'pro' && mode === 'ai') {
+          handleAIResponse(payload.new.content);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [debateId, mode]);
 
   useEffect(() => {
     if (mode === 'ai') {
@@ -230,7 +188,6 @@ function ArenaContent() {
       return;
     }
     const interval = setInterval(() => {
-      // 10% chance to toggle status for demo purposes
       if (Math.random() > 0.9) {
         setIsOpponentOnline(prev => !prev);
       }
@@ -238,10 +195,39 @@ function ArenaContent() {
     return () => clearInterval(interval);
   }, [mode]);
 
+  const handleAIResponse = async (userText: string) => {
+    if (!debateId) return;
+    setIsThinking(true);
+    const historyForAi = messages.map(m => ({ role: m.role, content: m.content }));
+    historyForAi.push({ role: 'pro', content: userText });
+    await getAIResponse(debateId, topic, historyForAi);
+    setIsThinking(false);
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || !debateId || !userProfile) return;
+    const content = input;
+    setInput('');
+    await saveMessage(debateId, content, 'pro', userProfile.full_name || userProfile.username || 'User');
+  };
+
+  // -- Timer & Scroll --
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (!isStarted || isFinished) return;
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          setIsFinished(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isStarted, isFinished]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isThinking]);
 
   const formatTime = (seconds: number) => {
@@ -255,136 +241,37 @@ function ArenaContent() {
     };
   };
 
-  const formatLongCountdown = (seconds: number) => {
-    const days = Math.floor(seconds / 86400);
-    const hrs = Math.floor((seconds % 86400) / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    
-    const parts = [];
-    if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
-    if (hrs > 0) parts.push(`${hrs} hour${hrs !== 1 ? 's' : ''}`);
-    if (mins > 0) parts.push(`${mins} minute${mins !== 1 ? 's' : ''}`);
-    
-    if (parts.length === 0) return "less than a minute";
-    if (parts.length === 1) return parts[0];
-    if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-    
-    const last = parts.pop();
-    return `${parts.join(', ')}, and ${last}`;
-  };
-
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isStarted && !isFinished && !isHistoryView) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isStarted, isFinished, isHistoryView]);
-
-  const handleSend = async () => {
-    if (!isStarted || !input.trim()) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'pro',
-      author: 'Alex Rivera',
-      content: input,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-
-    if (mode === 'ai') {
-      setIsThinking(true);
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: `You are a world-class debater. The topic is: "${topic}". 
-              The current debate state is a series of arguments. 
-              The user just said: "${input}". 
-              Respond as the "CON" (opposition) side. Be concise, sharp, and logical. 
-              Keep your response under 100 words.` }]
-            }
-          ],
-          config: {
-            systemInstruction: "You are a highly intellectual and competitive debater named Marcus Thorne. You are currently in a high-stakes debate competition. Your tone is professional, slightly provocative, and deeply logical."
-          }
-        });
-
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'con',
-          author: selectedOpponent.name,
-          content: response.text || "I'm processing your argument...",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isAI: true
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } catch (error) {
-        console.error("AI Error:", error);
-      } finally {
-        setIsThinking(false);
-      }
-    }
-  };
-
-  const handleClearChat = () => {
-    if (confirm('Are you sure you want to clear the current chat history?')) {
-      setMessages([]);
-    }
-  };
-
   const handleExit = (targetHref?: string) => {
-    if (isHistoryView || isFinished) {
-      if (targetHref) router.push(targetHref);
-      else router.push('/debates');
+    if (isFinished) {
+      router.push(targetHref || '/debates');
       return true;
     }
-
-    if (isStarted && !isFinished) {
-      setPendingHref(targetHref || '/debates');
-      setShowExitModal(true);
-      return false; // Block immediate navigation for sidebar
-    } else {
-      if (targetHref) router.push(targetHref);
-      else router.push('/debates');
-      return true;
-    }
+    setPendingHref(targetHref || '/debates');
+    setShowExitModal(true);
+    return false;
   };
 
   const confirmExit = () => {
-    // Save to history immediately as a loss
-    const historyItem = {
-      id: `h-${Date.now()}`,
-      title: topic,
-      outcome: 'Lost',
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      opponent: selectedOpponent.name,
-      image: `https://picsum.photos/seed/${topic.length}/600/400`,
-      score: `${Math.floor(Math.random() * 10) + 40}/100`,
-      messages: messages,
-      opponentAvatar: selectedOpponent.avatar
-    };
-
-    const savedHistory = JSON.parse(localStorage.getItem('debate_history') || '[]');
-    localStorage.setItem('debate_history', JSON.stringify([historyItem, ...savedHistory]));
-    
-    if (searchParams.get('opponent')) {
-      const finishedDebates = JSON.parse(localStorage.getItem('finished_debates') || '[]');
-      localStorage.setItem('finished_debates', JSON.stringify([...finishedDebates, searchParams.get('opponent')]));
-    }
-
     router.push(pendingHref || '/debates');
     setShowExitModal(false);
   };
+
+  useEffect(() => {
+    if (!isFinished || isHistoryView || !debateId || !userProfile) return;
+
+    async function concludeDebate() {
+      const proCount = messages.filter(m => m.role === 'pro').length;
+      const conCount = messages.filter(m => m.role === 'con').length;
+      let finalWinner = proCount >= conCount ? (userProfile?.full_name || 'User') : selectedOpponent.name;
+      setWinner(finalWinner);
+
+      await supabase.from('debates').update({
+        status: 'finished',
+        winner_id: finalWinner === selectedOpponent.name ? 'opponent' : 'user'
+      }).eq('id', debateId);
+    }
+    concludeDebate();
+  }, [isFinished, isHistoryView, debateId, messages, userProfile, selectedOpponent.name]);
 
   const time = formatTime(timeLeft);
 
@@ -394,7 +281,7 @@ function ArenaContent() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {!isStarted && startTimeParam ? (
           <main className="flex-1 flex items-center justify-center p-8">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="max-w-2xl w-full bg-white rounded-[40px] p-12 shadow-xl shadow-slate-200/50 border border-slate-100 text-center space-y-8"
@@ -402,7 +289,7 @@ function ArenaContent() {
               <div className="size-24 bg-[#585bf3]/10 rounded-3xl flex items-center justify-center mx-auto mb-4">
                 <Timer className="w-12 h-12 text-[#585bf3]" />
               </div>
-              
+
               <div className="space-y-4">
                 <h1 className="text-4xl font-black text-slate-900 leading-tight">
                   The Arena is <span className="text-[#585bf3]">Preparing</span>
@@ -416,17 +303,17 @@ function ArenaContent() {
                 <div className="space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Scheduled Start</p>
                   <p className="text-2xl font-bold text-slate-900">
-                    {new Date(startTimeParam).toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })} at {new Date(startTimeParam).toLocaleTimeString('en-US', { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
+                    {new Date(startTimeParam).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric'
+                    })} at {new Date(startTimeParam).toLocaleTimeString('en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit'
                     })}
                   </p>
                 </div>
-                
+
                 <div className="h-px bg-slate-200 w-12 mx-auto" />
 
                 <div className="space-y-2">
@@ -455,8 +342,8 @@ function ArenaContent() {
                   &quot;The aim of argument, or of discussion, should not be victory, but progress.&quot;
                 </p>
                 <div className="flex items-center justify-center">
-                  <Link 
-                    href="/debates" 
+                  <Link
+                    href="/debates"
                     className="w-full sm:w-auto px-12 py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
                   >
                     Browse Other Debates
@@ -495,7 +382,7 @@ function ArenaContent() {
                       <div className={`absolute bottom-0 right-0 size-2 rounded-full border border-white ${isHistoryView ? 'bg-slate-300' : (isOpponentOnline ? 'bg-emerald-500' : 'bg-slate-300')}`} />
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => handleExit()}
                     className="text-xs font-bold text-rose-500 hover:text-rose-600 px-4 py-2 rounded-full border border-rose-100 hover:bg-rose-50 transition-all"
                   >
@@ -508,7 +395,7 @@ function ArenaContent() {
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
                 <AnimatePresence>
                   {messages.map((msg) => (
-                    <motion.div 
+                    <motion.div
                       key={msg.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -518,11 +405,10 @@ function ArenaContent() {
                         <span className="text-xs font-bold text-slate-900">{msg.author}</span>
                         <span className="text-[10px] text-slate-400 font-medium">{msg.timestamp}</span>
                       </div>
-                      <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                        msg.role === 'pro' 
-                          ? 'bg-white border border-slate-100 rounded-tl-none text-slate-800' 
-                          : 'bg-[#585bf3] text-white rounded-tr-none'
-                      }`}>
+                      <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'pro'
+                        ? 'bg-white border border-slate-100 rounded-tl-none text-slate-800'
+                        : 'bg-[#585bf3] text-white rounded-tr-none'
+                        }`}>
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     </motion.div>
@@ -530,7 +416,7 @@ function ArenaContent() {
                 </AnimatePresence>
 
                 {isThinking && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="flex flex-col items-end gap-2 max-w-[80%] ml-auto"
@@ -550,12 +436,12 @@ function ArenaContent() {
               {/* Debate Concluded Overlay */}
               <AnimatePresence>
                 {isFinished && !isHistoryView && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-8"
                   >
-                    <motion.div 
+                    <motion.div
                       initial={{ scale: 0.9, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       className="bg-white rounded-[40px] p-12 max-w-lg w-full text-center shadow-2xl space-y-8"
@@ -567,15 +453,15 @@ function ArenaContent() {
                         <h2 className="text-3xl font-black text-slate-900">Debate Concluded</h2>
                         <p className="text-slate-500 font-medium">The judges have reached a verdict.</p>
                       </div>
-                      
+
                       <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Winner</p>
                         <p className="text-2xl font-black text-[#585bf3]">{winner || 'Calculating...'}</p>
                       </div>
 
                       <div className="pt-4">
-                        <Link 
-                          href="/debates" 
+                        <Link
+                          href="/debates"
                           className="block w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20"
                         >
                           Return to Debates
@@ -589,13 +475,13 @@ function ArenaContent() {
               {/* Exit Confirmation Modal */}
               <AnimatePresence>
                 {showExitModal && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-8"
                   >
-                    <motion.div 
+                    <motion.div
                       initial={{ scale: 0.9, opacity: 0, y: 20 }}
                       animate={{ scale: 1, opacity: 1, y: 0 }}
                       exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -604,7 +490,7 @@ function ArenaContent() {
                       <div className="size-20 bg-rose-100 rounded-3xl flex items-center justify-center mx-auto">
                         <LogOut className="w-10 h-10 text-rose-600" />
                       </div>
-                      
+
                       <div className="space-y-3">
                         <h2 className="text-2xl font-black text-slate-900">Abandon Debate?</h2>
                         <p className="text-slate-500 font-medium leading-relaxed">
@@ -613,13 +499,13 @@ function ArenaContent() {
                       </div>
 
                       <div className="flex flex-col gap-3 pt-2">
-                        <button 
+                        <button
                           onClick={confirmExit}
                           className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-600/20"
                         >
                           Yes, Exit and Forfeit
                         </button>
-                        <button 
+                        <button
                           onClick={() => setShowExitModal(false)}
                           className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
                         >
@@ -635,17 +521,17 @@ function ArenaContent() {
               <div className="p-8 border-t border-slate-100 bg-white">
                 <div className="max-w-4xl mx-auto relative flex items-center gap-4">
                   <div className="flex-1 relative">
-                    <input 
-                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed" 
+                    <input
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder={isFinished ? "Debate has ended" : (isStarted ? "Type your argument..." : "Debate hasn't started yet")}
-                      type="text" 
+                      type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                       disabled={!isStarted || isFinished}
                     />
                   </div>
-                  <button 
+                  <button
                     onClick={handleSend}
                     disabled={!isStarted || !input.trim() || isFinished}
                     className="bg-[#585bf3] text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-[#585bf3]/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"

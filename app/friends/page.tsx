@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  Search, 
+import {
+  Search,
   UserPlus,
   MessageSquare,
   Swords,
@@ -11,20 +11,23 @@ import {
   Send,
   Loader2
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
 import Sidebar from '@/components/Sidebar';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 const FriendCard = ({ name, personality, avatar, onChat, isOnline }: any) => (
   <div className="bg-white p-5 rounded-2xl border border-slate-100 flex flex-col lg:flex-row items-center justify-between gap-6 hover:shadow-md transition-all">
     <div className="flex items-center gap-5 w-full lg:w-auto">
       <div className="relative">
         <div className="size-14 rounded-full bg-slate-100 overflow-hidden">
-          <Image 
-            className="size-full object-cover" 
-            src={avatar} 
-            alt={name} 
+          <Image
+            className="size-full object-cover"
+            src={avatar}
+            alt={name}
             width={56}
             height={56}
             referrerPolicy="no-referrer"
@@ -42,16 +45,16 @@ const FriendCard = ({ name, personality, avatar, onChat, isOnline }: any) => (
         <p className="text-xs text-slate-500">{personality}</p>
       </div>
     </div>
-    
+
     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-      <Link 
+      <Link
         href={`/debate/challenge?friend=${encodeURIComponent(name)}`}
         className="flex-1 lg:flex-none px-6 py-2.5 bg-[#585bf3] text-white text-sm font-bold rounded-xl hover:bg-[#585bf3]/90 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-[#585bf3]/20"
       >
         <Swords className="w-4 h-4" />
         Challenge
       </Link>
-      <button 
+      <button
         onClick={onChat}
         className="p-2.5 rounded-xl bg-slate-50 text-[#585bf3] hover:bg-slate-100 transition-colors border border-slate-200"
       >
@@ -84,14 +87,14 @@ const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) =>
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
       />
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -118,11 +121,10 @@ const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) =>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50 no-scrollbar">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${
-                msg.role === 'user' 
-                  ? 'bg-[#585bf3] text-white rounded-tr-none' 
-                  : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none shadow-sm'
-              }`}>
+              <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${msg.role === 'user'
+                ? 'bg-[#585bf3] text-white rounded-tr-none'
+                : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none shadow-sm'
+                }`}>
                 {msg.text}
               </div>
             </div>
@@ -130,18 +132,18 @@ const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) =>
         </div>
 
         <div className="p-4 bg-white border-t border-slate-100">
-          <form 
+          <form
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}
             className="flex items-center gap-2"
           >
-            <input 
+            <input
               type="text"
               placeholder="Type a message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="flex-1 px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-[#585bf3]/50 text-sm transition-all"
             />
-            <button 
+            <button
               type="submit"
               disabled={!input.trim()}
               className="p-3 bg-[#585bf3] text-white rounded-xl hover:bg-[#585bf3]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#585bf3]/20"
@@ -156,36 +158,94 @@ const ChatModal = ({ friend, onClose }: { friend: any, onClose: () => void }) =>
 };
 
 export default function FriendManager() {
+  const [user, setUser] = useState<any>(null);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [potentialFriends, setPotentialFriends] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [chatFriend, setChatFriend] = useState<any>(null);
   const [modalSearchQuery, setModalSearchQuery] = useState('');
   const [mainSearchQuery, setMainSearchQuery] = useState('');
-  const [friends, setFriends] = useState([
-    { id: 1, name: "Sarah Jenkins", personality: "Analytical & Ethical", avatar: "https://picsum.photos/seed/sarah/200/200", isOnline: true },
-    { id: 2, name: "David Chen", personality: "Strategic & Political", avatar: "https://picsum.photos/seed/david/200/200", isOnline: false },
-    { id: 3, name: "Maria Garcia", personality: "Empathetic & Scientific", avatar: "https://picsum.photos/seed/maria/200/200", isOnline: true },
-    { id: 4, name: "Jordan Smith", personality: "Bold & Economic", avatar: "https://picsum.photos/seed/jordan/200/200", isOnline: false },
-  ]);
 
-  const potentialFriends = [
-    { id: 5, name: "Alex Rivera", personality: "Logical & Philosophical", avatar: "https://picsum.photos/seed/alex/200/200", isOnline: true },
-    { id: 6, name: "Elena Volkov", personality: "Direct & Historical", avatar: "https://picsum.photos/seed/elena/200/200", isOnline: true },
-    { id: 7, name: "Sam Taylor", personality: "Creative & Social", avatar: "https://picsum.photos/seed/sam/200/200", isOnline: false },
-    { id: 8, name: "Yuki Tanaka", personality: "Precise & Technological", avatar: "https://picsum.photos/seed/yuki/200/200", isOnline: true },
-  ];
+  React.useEffect(() => {
+    async function init() {
+      setLoading(true);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        setLoading(false);
+        return;
+      }
+      setUser(authUser);
 
-  const filteredPotentialFriends = potentialFriends.filter(pf => 
-    pf.name.toLowerCase().includes(modalSearchQuery.toLowerCase()) && 
-    !friends.find(f => f.id === pf.id)
-  );
+      // Fetch friends
+      const { data: friendshipData } = await supabase
+        .from('friendships')
+        .select(`
+          status,
+          friend:friend_id(id, full_name, avatar_url, specialty, rank)
+        `)
+        .eq('user_id', authUser.id)
+        .eq('status', 'accepted');
 
-  const filteredFriends = friends.filter(f => 
+      if (friendshipData) {
+        setFriends(friendshipData.map((f: any) => ({
+          id: f.friend.id,
+          name: f.friend.full_name || 'Anonymous',
+          personality: f.friend.specialty || 'General Expert',
+          avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
+          isOnline: Math.random() > 0.5 // Simulated for now
+        })));
+      }
+      setLoading(false);
+    }
+    init();
+  }, []);
+
+  React.useEffect(() => {
+    if (!modalSearchQuery.trim() || !user) {
+      setPotentialFriends([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .ilike('full_name', `%${modalSearchQuery}%`)
+        .neq('id', user.id)
+        .limit(10);
+
+      if (profiles) {
+        setPotentialFriends(profiles.map(p => ({
+          id: p.id,
+          name: p.full_name || 'Anonymous',
+          personality: p.specialty || 'General Expert',
+          avatar: p.avatar_url || `https://picsum.photos/seed/${p.id}/200/200`,
+          isOnline: Math.random() > 0.5
+        })));
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [modalSearchQuery, user]);
+
+  const filteredFriends = friends.filter(f =>
     f.name.toLowerCase().includes(mainSearchQuery.toLowerCase()) ||
     f.personality.toLowerCase().includes(mainSearchQuery.toLowerCase())
   );
 
-  const addFriend = (friend: any) => {
-    setFriends([...friends, friend]);
+  const addFriend = async (friend: any) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('friendships')
+      .insert({
+        user_id: user.id,
+        friend_id: friend.id,
+        status: 'accepted' // Auto-accept for demo purposes
+      });
+
+    if (!error) {
+      setFriends([...friends, friend]);
+      setPotentialFriends(potentialFriends.filter(pf => pf.id !== friend.id));
+    }
   };
 
   return (
@@ -196,14 +256,14 @@ export default function FriendManager() {
         )}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsModalOpen(false)}
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -211,18 +271,18 @@ export default function FriendManager() {
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                 <h2 className="text-xl font-black text-slate-900">Find New Partners</h2>
-                <button 
+                <button
                   onClick={() => setIsModalOpen(false)}
                   className="p-2 hover:bg-slate-100 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
-              
+
               <div className="p-6 space-y-6">
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input 
+                  <input
                     type="text"
                     placeholder="Search by name..."
                     value={modalSearchQuery}
@@ -232,8 +292,8 @@ export default function FriendManager() {
                 </div>
 
                 <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar">
-                  {filteredPotentialFriends.length > 0 ? (
-                    filteredPotentialFriends.map((pf) => (
+                  {potentialFriends.length > 0 ? (
+                    potentialFriends.filter(pf => !friends.find(f => f.id === pf.id)).map((pf) => (
                       <div key={pf.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
                         <div className="flex items-center gap-3">
                           <div className="relative">
@@ -250,7 +310,7 @@ export default function FriendManager() {
                             <p className="text-[10px] text-slate-500">{pf.personality}</p>
                           </div>
                         </div>
-                        <button 
+                        <button
                           onClick={() => addFriend(pf)}
                           className="p-2 bg-[#585bf3]/10 text-[#585bf3] rounded-lg hover:bg-[#585bf3] hover:text-white transition-all"
                         >
@@ -265,9 +325,9 @@ export default function FriendManager() {
                   )}
                 </div>
               </div>
-              
+
               <div className="p-6 bg-slate-50 border-t border-slate-100">
-                <button 
+                <button
                   onClick={() => setIsModalOpen(false)}
                   className="w-full py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-100 transition-colors"
                 >
@@ -292,7 +352,7 @@ export default function FriendManager() {
                     <h1 className="text-3xl font-black tracking-tight text-slate-900">Friend Manager</h1>
                     <p className="text-slate-500">Manage your circle of debate partners, coaches, and rivals.</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setIsModalOpen(true)}
                     className="flex items-center gap-2 px-6 py-3 bg-[#585bf3] text-white font-bold rounded-xl hover:shadow-lg hover:shadow-[#585bf3]/30 transition-all"
                   >
@@ -304,10 +364,10 @@ export default function FriendManager() {
                   <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
                     <Search className="w-5 h-5 text-slate-400 group-focus-within:text-[#585bf3] transition-colors" />
                   </div>
-                  <input 
-                    className="block w-full pl-14 pr-4 py-4 bg-white border-none rounded-2xl shadow-sm focus:ring-2 focus:ring-[#585bf3]/50 text-slate-900 placeholder-slate-400 transition-all" 
-                    placeholder="Search friends by name, rank, or debate specialty..." 
-                    type="text" 
+                  <input
+                    className="block w-full pl-14 pr-4 py-4 bg-white border-none rounded-2xl shadow-sm focus:ring-2 focus:ring-[#585bf3]/50 text-slate-900 placeholder-slate-400 transition-all"
+                    placeholder="Search friends by name, rank, or debate specialty..."
+                    type="text"
                     value={mainSearchQuery}
                     onChange={(e) => setMainSearchQuery(e.target.value)}
                   />
@@ -316,12 +376,17 @@ export default function FriendManager() {
 
               {/* Friends List */}
               <div className="grid grid-cols-1 gap-4">
-                {filteredFriends.length > 0 ? (
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100">
+                    <Loader2 className="w-10 h-10 text-[#585bf3] animate-spin mb-4" />
+                    <p className="text-slate-500 font-medium">Loading your circle...</p>
+                  </div>
+                ) : filteredFriends.length > 0 ? (
                   filteredFriends.map((friend) => (
-                    <FriendCard 
+                    <FriendCard
                       key={friend.id}
-                      name={friend.name} 
-                      personality={friend.personality} 
+                      name={friend.name}
+                      personality={friend.personality}
                       avatar={friend.avatar}
                       isOnline={friend.isOnline}
                       onChat={() => setChatFriend(friend)}
