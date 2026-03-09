@@ -44,22 +44,50 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
   const router = useRouter();
 
   useEffect(() => {
+    let channel: any;
+
     async function getProfile() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        // Initial fetch
         const { data } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .single();
+
         if (data) {
           setProfile(data);
         } else {
           setProfile({ full_name: user.email?.split('@')[0] || 'User' });
         }
+
+        // Subscribe to changes
+        channel = supabase
+          .channel(`profile-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'profiles',
+              filter: `id=eq.${user.id}`
+            },
+            (payload) => {
+              setProfile(payload.new);
+            }
+          )
+          .subscribe();
       }
     }
+
     getProfile();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [supabase]);
 
   const handleLogout = async () => {

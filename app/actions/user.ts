@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 
 export async function updateProfile(data: { full_name?: string, avatar_url?: string }) {
     const supabase = await createClient()
@@ -14,5 +15,7 @@ export async function updateProfile(data: { full_name?: string, avatar_url?: str
         .eq('id', user.id)
 
     if (error) throw error
+
+    revalidatePath('/')
     return { success: true }
 }

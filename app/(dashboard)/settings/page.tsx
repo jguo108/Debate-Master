@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/client';
 import { updateProfile } from '@/app/actions/user';
@@ -29,6 +30,7 @@ const PRESET_AVATARS = [
 ];
 
 export default function SettingsPage() {
+    const router = useRouter();
     const [profile, setProfile] = useState<any>(null);
     const [fullName, setFullName] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
@@ -74,6 +76,9 @@ export default function SettingsPage() {
 
             // Update local state to reflect changes immediately
             setProfile((prev: any) => ({ ...prev, full_name: fullName, avatar_url: avatarUrl }));
+
+            // Refresh the router to update other components (like Sidebar)
+            router.refresh();
 
             setTimeout(() => setMessage(null), 3000);
         } catch (err: any) {
