@@ -253,7 +253,13 @@ function ArenaContent() {
                 setConParticipant({ id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: conProfile.avatar_url || `https://picsum.photos/seed/${debate.con_user_id}/100/100` });
               }
             } else if (debate.mode === 'ai') {
-              setConParticipant({ id: 'ai', name: (models as any)[debate.model]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-2/100/100' });
+              // Gracefully handle missing model column in older records
+              const modelKey = debate.model || modelId || 'gemini';
+              setConParticipant({
+                id: 'ai',
+                name: (models as any)[modelKey]?.name || 'AI Assistant',
+                avatar: 'https://picsum.photos/seed/ai-2/100/100'
+              });
             }
           }
 
@@ -273,42 +279,46 @@ function ArenaContent() {
               topic: topicFromUrl || 'AI Debate',
               time_limit: parseInt(timeLimitParam),
               mode: 'ai',
-              status: 'live',
+              status: 'scheduled',
               pro_user_id: user.id,
-              model: modelId
+              model: modelId // This is the column that might be missing
             })
             .select().single();
 
           if (error) {
             console.error("DEBUG: New AI Debate INSERT FAILED:", JSON.stringify(error));
+            if (error.code === 'PGRST204' || error.message?.includes('model')) {
+              console.warn("DEBUG: The 'model' column seems to be missing. Attempting fallback insert...");
+              // Fallback attempt without the model column if the database hasn't been updated yet
+              const { data: fallbackDebate, error: fallbackError } = await supabase
+                .from('debates')
+                .insert({
+                  topic: topicFromUrl || 'AI Debate',
+                  time_limit: parseInt(timeLimitParam),
+                  mode: 'ai',
+                  status: 'scheduled',
+                  pro_user_id: user.id
+                })
+                .select().single();
+
+              if (fallbackError) {
+                console.error("DEBUG: Fallback AI Debate INSERT ALSO FAILED:", JSON.stringify(fallbackError));
+                setIsInitialLoading(false);
+                return;
+              }
+
+              if (fallbackDebate) {
+                // Manually set debate Id and proceed
+                initNewDebate(fallbackDebate, activeProfile, user);
+                return;
+              }
+            }
             setIsInitialLoading(false);
             return;
           }
 
           if (newDebate) {
-            setDebateId(newDebate.id);
-            setHistoryTopic(newDebate.topic);
-            setIsStarted(true);
-            setProParticipant({ id: user.id, name: activeProfile?.full_name || 'User', avatar: activeProfile?.avatar_url || `https://picsum.photos/seed/${user.id}/100/100` });
-            setConParticipant({ id: 'ai', name: (models as any)[modelId]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-3/100/100' });
-
-            let baseDuration = newDebate.time_limit ? newDebate.time_limit * 60 : 600;
-            let startMs = new Date(newDebate.created_at || Date.now()).getTime();
-            const calculatedEndMs = startMs + baseDuration * 1000;
-            setEndTimeMs(calculatedEndMs);
-
-            const remaining = Math.max(0, Math.floor((calculatedEndMs - Date.now()) / 1000));
-            setTimeLeft(remaining);
-            if (remaining <= 0) setIsFinished(true);
-
-            // Auto-start with a dynamic opening
-            setIsThinking(true);
-            await getAIResponse(newDebate.id, newDebate.topic, []);
-            setIsThinking(false);
-
-            // Re-fetch to satisfy subscription race
-            const { data: finalMessages } = await supabase.from('messages').select('*').eq('debate_id', newDebate.id).order('created_at', { ascending: true });
-            if (finalMessages) setMessages(finalMessages);
+            initNewDebate(newDebate, activeProfile, user);
           }
         }
       } else {
@@ -316,6 +326,34 @@ function ArenaContent() {
       }
       setIsInitialLoading(false);
     }
+
+    // Helper to avoid code duplication in fallback
+    async function initNewDebate(debate: any, activeProfile: any, user: any) {
+      setDebateId(debate.id);
+      setHistoryTopic(debate.topic);
+      setIsStarted(true);
+      setProParticipant({ id: user.id, name: activeProfile?.full_name || 'User', avatar: activeProfile?.avatar_url || `https://picsum.photos/seed/${user.id}/100/100` });
+      setConParticipant({ id: 'ai', name: (models as any)[modelId]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-3/100/100' });
+
+      let baseDuration = debate.time_limit ? debate.time_limit * 60 : 600;
+      let startMs = new Date(debate.created_at || Date.now()).getTime();
+      const calculatedEndMs = startMs + baseDuration * 1000;
+      setEndTimeMs(calculatedEndMs);
+
+      const remaining = Math.max(0, Math.floor((calculatedEndMs - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) setIsFinished(true);
+
+      // Auto-start with a dynamic opening
+      setIsThinking(true);
+      await getAIResponse(debate.id, debate.topic, []);
+      setIsThinking(false);
+
+      // Re-fetch to satisfy subscription race
+      const { data: finalMessages } = await supabase.from('messages').select('*').eq('debate_id', debate.id).order('created_at', { ascending: true });
+      if (finalMessages) setMessages(finalMessages);
+    }
+
     init();
   }, [searchParams, activeMode, historyTopic, timeLimitParam, modelId]);
 
@@ -759,12 +797,12 @@ function ArenaContent() {
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex flex-col items-end gap-2 max-w-[80%] ml-auto"
+                    className="flex flex-col items-start gap-2 max-w-[80%]"
                   >
-                    <div className="flex items-center gap-2 mb-1 flex-row-reverse">
+                    <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-bold text-slate-900">{selectedOpponent.name}</span>
                     </div>
-                    <div className="bg-slate-100 p-5 rounded-2xl rounded-tr-none flex gap-1">
+                    <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl rounded-tl-none flex gap-1">
                       <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="size-1.5 bg-slate-400 rounded-full" />
                       <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="size-1.5 bg-slate-400 rounded-full" />
                       <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="size-1.5 bg-slate-400 rounded-full" />
