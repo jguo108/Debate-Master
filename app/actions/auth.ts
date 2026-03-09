@@ -31,7 +31,7 @@ export async function signup(formData: FormData) {
         options: {
             data: {
                 full_name: formData.get('full_name') as string,
-                avatar_url: `https://picsum.photos/seed/${Math.random()}/100/100`,
+                avatar_url: '/avatars/default.png',
             },
         },
     }

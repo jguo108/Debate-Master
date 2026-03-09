@@ -51,12 +51,15 @@ function ChallengeFriendContent() {
         .eq('status', 'accepted');
 
       if (friendshipData) {
-        setFriendsList(friendshipData.map((f: any) => ({
-          id: f.friend.id,
-          name: f.friend.full_name || 'Anonymous',
-          avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
-          status: 'Online' // Mocked online status
-        })));
+        setFriendsList(friendshipData.map((f: any) => {
+          const avatar = f.friend.avatar_url;
+          return {
+            id: f.friend.id,
+            name: f.friend.full_name || 'Anonymous',
+            avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : "/avatars/default.png",
+            status: 'Online' // Mocked online status
+          };
+        }));
       }
 
       const friendId = searchParams.get('friendId');

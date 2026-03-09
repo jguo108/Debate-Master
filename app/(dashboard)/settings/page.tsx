@@ -21,12 +21,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 const supabase = createClient();
 
 const PRESET_AVATARS = [
-    'https://picsum.photos/seed/alex/100/100',
-    'https://picsum.photos/seed/sophia/100/100',
-    'https://picsum.photos/seed/marcus/100/100',
-    'https://picsum.photos/seed/lisa/100/100',
-    'https://picsum.photos/seed/david/100/100',
-    'https://picsum.photos/seed/elena/100/100',
+    '/avatars/1.png',
+    '/avatars/2.png',
+    '/avatars/3.png',
+    '/avatars/4.png',
+    '/avatars/5.png',
+    '/avatars/6.png',
+    '/avatars/7.png',
+    '/avatars/8.png',
+    '/avatars/9.png',
 ];
 
 export default function SettingsPage() {
@@ -54,7 +57,9 @@ export default function SettingsPage() {
                 if (data) {
                     setProfile(data);
                     setFullName(data.full_name || '');
-                    setAvatarUrl(data.avatar_url || '');
+                    // Handle legacy picsum photos by ignoring them so fallback is used
+                    const currentAvatar = data.avatar_url;
+                    setAvatarUrl((currentAvatar && !currentAvatar.includes('picsum.photos')) ? currentAvatar : '');
                 } else {
                     setFullName(user.email?.split('@')[0] || '');
                 }
@@ -178,7 +183,7 @@ export default function SettingsPage() {
                                 <div className="relative group mb-6">
                                     <div className="size-36 rounded-full overflow-hidden border-4 border-[#585bf3]/10 relative shadow-inner">
                                         <Image
-                                            src={avatarUrl || 'https://picsum.photos/seed/alex/100/100'}
+                                            src={(avatarUrl && !avatarUrl.includes('picsum.photos')) ? avatarUrl : '/avatars/default.png'}
                                             alt="Avatar Preview"
                                             fill
                                             className="object-cover"
@@ -229,7 +234,7 @@ export default function SettingsPage() {
                                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
                                         Or Choose a Preset
                                     </label>
-                                    <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+                                    <div className="flex gap-4 flex-wrap">
                                         {PRESET_AVATARS.map((url, i) => (
                                             <button
                                                 key={i}

@@ -39,7 +39,7 @@ const initialScheduled = [
     time: "06:24", // SIMULATION: Started 5 minutes ago relative to current time 06:29. Join now to see 5 mins remaining.
     timeLimit: "10",
     opponent: "Sophia Rivers",
-    avatar: "https://picsum.photos/seed/sophia/100/100"
+    avatar: "/avatars/1.png"
   },
   {
     id: 's1',
@@ -48,7 +48,7 @@ const initialScheduled = [
     time: "14:00",
     timeLimit: "20",
     opponent: "David Miller",
-    avatar: "https://picsum.photos/seed/david/100/100"
+    avatar: "/avatars/2.png"
   },
   {
     id: 's2',
@@ -57,7 +57,7 @@ const initialScheduled = [
     time: "10:30",
     timeLimit: "30",
     opponent: "Elena Vance",
-    avatar: "https://picsum.photos/seed/elena/100/100"
+    avatar: "/avatars/3.png"
   }
 ];
 
@@ -147,9 +147,10 @@ function DebatesContent() {
       if (isSentRequest) opponentId = d.con_user_id;
 
       const p = opponentId ? profilesMap.get(opponentId) : null;
+      const avatar = p?.avatar_url;
       return {
         name: p?.full_name || (opponentId ? 'Anonymous' : 'AI Assistant'),
-        avatar: p?.avatar_url || `https://picsum.photos/seed/${opponentId || 'ai'}/100/100`
+        avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : "/avatars/default.png"
       };
     };
 

@@ -130,7 +130,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
             <Image
               alt="User Profile"
               className="size-10 rounded-full object-cover shrink-0"
-              src={profile?.avatar_url || "https://picsum.photos/seed/alex/100/100"}
+              src={(profile?.avatar_url && !profile.avatar_url.includes('picsum.photos')) ? profile.avatar_url : "/avatars/default.png"}
               width={40}
               height={40}
               referrerPolicy="no-referrer"

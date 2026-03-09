@@ -94,7 +94,7 @@ export default function LoginPage() {
                   <Image
                     key={i}
                     className="h-10 w-10 rounded-full border-2 border-white"
-                    src={`https://picsum.photos/seed/user${i}/100/100`}
+                    src={`/avatars/${i}.png`}
                     alt="User avatar"
                     width={40}
                     height={40}

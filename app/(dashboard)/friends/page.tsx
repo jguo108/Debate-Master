@@ -293,21 +293,27 @@ export default function FriendManager() {
       outgoingPromise
     ]);
 
-    const friendsList = (friendshipRes.data || []).filter((f: any) => f.friend).map((f: any) => ({
-      id: f.friend.id,
-      name: f.friend.full_name || 'Anonymous',
-      personality: f.friend.specialty || '',
-      avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
-      isOnline: Math.random() > 0.5 // Simulated for now
-    }));
+    const friendsList = (friendshipRes.data || []).filter((f: any) => f.friend).map((f: any) => {
+      const avatar = f.friend.avatar_url;
+      return {
+        id: f.friend.id,
+        name: f.friend.full_name || 'Anonymous',
+        personality: f.friend.specialty || '',
+        avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : "/avatars/default.png",
+        isOnline: Math.random() > 0.5 // Simulated for now
+      };
+    });
 
-    const incomingList = (incomingRes.data || []).filter((f: any) => f.requestor).map((f: any) => ({
-      id: f.requestor.id,
-      name: f.requestor.full_name || 'Anonymous',
-      personality: f.requestor.specialty || '',
-      avatar: f.requestor.avatar_url || `https://picsum.photos/seed/${f.requestor.id}/200/200`,
-      isOnline: Math.random() > 0.5
-    }));
+    const incomingList = (incomingRes.data || []).filter((f: any) => f.requestor).map((f: any) => {
+      const avatar = f.requestor.avatar_url;
+      return {
+        id: f.requestor.id,
+        name: f.requestor.full_name || 'Anonymous',
+        personality: f.requestor.specialty || '',
+        avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : "/avatars/default.png",
+        isOnline: Math.random() > 0.5
+      };
+    });
 
     const outgoingList = (outgoingRes.data || []).map(f => f.friend_id);
 
@@ -343,13 +349,16 @@ export default function FriendManager() {
         .limit(10);
 
       if (profiles) {
-        setPotentialFriends(profiles.map(p => ({
-          id: p.id,
-          name: p.full_name || 'Anonymous',
-          personality: p.specialty || '',
-          avatar: p.avatar_url || `https://picsum.photos/seed/${p.id}/200/200`,
-          isOnline: Math.random() > 0.5
-        })));
+        setPotentialFriends(profiles.map(p => {
+          const avatar = p.avatar_url;
+          return {
+            id: p.id,
+            name: p.full_name || 'Anonymous',
+            personality: p.specialty || '',
+            avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : "/avatars/default.png",
+            isOnline: Math.random() > 0.5
+          };
+        }));
       }
     }, 500);
     return () => clearTimeout(timer);

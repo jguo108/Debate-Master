@@ -86,26 +86,26 @@ function ArenaContent() {
   const initRef = useRef(false);
 
   const [historyTopic, setHistoryTopic] = useState(topicFromUrl || 'Loading Topic...');
-  const [historyOpponent, setHistoryOpponent] = useState<any>({ name: 'Loading...', avatar: 'https://picsum.photos/seed/placeholder/100/100' });
+  const [historyOpponent, setHistoryOpponent] = useState<any>({ name: 'Loading...', avatar: '/avatars/default.png' });
   const [activeMode, setActiveMode] = useState<string>(modeFromUrl);
-  const [proParticipant, setProParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: 'https://picsum.photos/seed/pro/100/100' });
-  const [conParticipant, setConParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: 'https://picsum.photos/seed/con/100/100' });
+  const [proParticipant, setProParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: '/avatars/default.png' });
+  const [conParticipant, setConParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: '/avatars/default.png' });
   const startTimeParam = searchParams.get('startTime');
 
   const currentUserRole = (userProfile && conParticipant.id === userProfile.id) ? 'con' : 'pro';
 
   const selectedOpponent = React.useMemo(() => {
     if (activeMode === 'ai') {
-      return { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-bot/100/100' };
+      return { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', avatar: '/avatars/default.png' };
     }
 
     // Determine opponent based on who the current user IS NOT
     if (userProfile && proParticipant.id && userProfile.id === proParticipant.id) {
-      return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+      return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', avatar: '/avatars/default.png' };
     }
 
     // Fallback/Loading
-    return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+    return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', avatar: '/avatars/default.png' };
   }, [activeMode, modelId, conParticipant, proParticipant, userProfile]);
 
   // -- Initialization --
@@ -154,14 +154,15 @@ function ArenaContent() {
           setEvaluationReason(debate.evaluation_reason);
           setActiveMode(debate.mode);
 
-          let currentPro: any = { id: null, name: 'Affirmative', avatar: `https://picsum.photos/seed/pro/100/100` };
-          let currentCon: any = { id: null, name: 'Opposition', avatar: `https://picsum.photos/seed/con/100/100` };
+          let currentPro: any = { id: null, name: 'Affirmative', avatar: `/avatars/default.png` };
+          let currentCon: any = { id: null, name: 'Opposition', avatar: `/avatars/default.png` };
 
           // Fetch Pro Profile
           if (debate.pro_user_id) {
             const { data: proProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.pro_user_id).single();
             if (proProfile) {
-              currentPro = { id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: proProfile.avatar_url || `https://picsum.photos/seed/${debate.pro_user_id}/100/100` };
+              const avatar = proProfile.avatar_url;
+              currentPro = { id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` };
               setProParticipant(currentPro);
             }
           }
@@ -170,11 +171,12 @@ function ArenaContent() {
           if (debate.con_user_id) {
             const { data: conProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.con_user_id).single();
             if (conProfile) {
-              currentCon = { id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: conProfile.avatar_url || `https://picsum.photos/seed/${debate.con_user_id}/100/100` };
+              const avatar = conProfile.avatar_url;
+              currentCon = { id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` };
               setConParticipant(currentCon);
             }
           } else if (debate.mode === 'ai') {
-            currentCon = { id: 'ai', name: (models as any)[debate.model || 'gemini']?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-1/100/100' };
+            currentCon = { id: 'ai', name: (models as any)[debate.model || 'gemini']?.name || 'AI Assistant', avatar: '/avatars/default.png' };
             setConParticipant(currentCon);
           }
 
@@ -240,7 +242,8 @@ function ArenaContent() {
             if (debate.pro_user_id) {
               const { data: proProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.pro_user_id).single();
               if (proProfile) {
-                setProParticipant({ id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: proProfile.avatar_url || `https://picsum.photos/seed/${debate.pro_user_id}/100/100` });
+                const avatar = proProfile.avatar_url;
+                setProParticipant({ id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` });
               }
             }
 
@@ -248,7 +251,8 @@ function ArenaContent() {
             if (debate.con_user_id) {
               const { data: conProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.con_user_id).single();
               if (conProfile) {
-                setConParticipant({ id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: conProfile.avatar_url || `https://picsum.photos/seed/${debate.con_user_id}/100/100` });
+                const avatar = conProfile.avatar_url;
+                setConParticipant({ id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` });
               }
             } else if (debate.mode === 'ai') {
               // Gracefully handle missing model column in older records
@@ -256,7 +260,7 @@ function ArenaContent() {
               setConParticipant({
                 id: 'ai',
                 name: (models as any)[modelKey]?.name || 'AI Assistant',
-                avatar: 'https://picsum.photos/seed/ai-2/100/100'
+                avatar: '/avatars/default.png'
               });
             }
           }
@@ -330,8 +334,9 @@ function ArenaContent() {
       setDebateId(debate.id);
       setHistoryTopic(debate.topic);
       setIsStarted(true);
-      setProParticipant({ id: user.id, name: activeProfile?.full_name || 'User', avatar: activeProfile?.avatar_url || `https://picsum.photos/seed/${user.id}/100/100` });
-      setConParticipant({ id: 'ai', name: (models as any)[modelId]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-3/100/100' });
+      const avatar = activeProfile?.avatar_url;
+      setProParticipant({ id: user.id, name: activeProfile?.full_name || 'User', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` });
+      setConParticipant({ id: 'ai', name: (models as any)[modelId]?.name || 'AI Assistant', avatar: '/avatars/default.png' });
 
       let baseDuration = debate.time_limit ? debate.time_limit * 60 : 600;
       let startMs = new Date(debate.created_at || Date.now()).getTime();
