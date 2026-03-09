@@ -15,60 +15,65 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
-import Sidebar from '@/components/Sidebar';
+import { useRouter } from 'next/navigation';
+
 import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
 
-const FriendCard = ({ name, personality, avatar, onChat, isOnline, unreadCount = 0 }: any) => (
-  <div className="bg-white p-5 rounded-2xl border border-slate-100 flex flex-col lg:flex-row items-center justify-between gap-6 hover:shadow-md transition-all">
-    <div className="flex items-center gap-5 w-full lg:w-auto">
-      <div className="relative">
-        <div className="size-14 rounded-full bg-slate-100 overflow-hidden">
-          <Image
-            className="size-full object-cover"
-            src={avatar}
-            alt={name}
-            width={56}
-            height={56}
-            referrerPolicy="no-referrer"
-          />
-        </div>
-        <div className={`absolute bottom-0.5 right-0.5 size-3.5 rounded-full border-2 border-white ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-      </div>
-      <div>
-        <div className="flex items-center gap-2">
-          <h3 className="font-bold text-slate-900">{name}</h3>
-          <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-md ${isOnline ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-            {isOnline ? 'Online' : 'Offline'}
-          </span>
-        </div>
-        <p className="text-xs text-slate-500">{personality}</p>
-      </div>
-    </div>
+const FriendCard = ({ id, name, personality, avatar, onChat, isOnline, unreadCount = 0 }: any) => {
+  const router = useRouter();
 
-    <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-      <Link
-        href={`/debate/challenge?friend=${encodeURIComponent(name)}`}
-        className="flex-1 lg:flex-none px-6 py-2.5 bg-[#585bf3] text-white text-sm font-bold rounded-xl hover:bg-[#585bf3]/90 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-[#585bf3]/20"
-      >
-        <Swords className="w-4 h-4" />
-        Challenge
-      </Link>
-      <button
-        onClick={onChat}
-        className="relative p-2.5 rounded-xl bg-slate-50 text-[#585bf3] hover:bg-slate-100 transition-colors border border-slate-200"
-      >
-        <MessageSquare className="w-5 h-5" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] font-bold h-5 min-w-[20px] rounded-full flex items-center justify-center px-1.5 shadow-sm border-2 border-white pointer-events-none">
-            {unreadCount}
-          </span>
-        )}
-      </button>
+  return (
+    <div className="bg-white p-5 rounded-2xl border border-slate-100 flex flex-col lg:flex-row items-center justify-between gap-6 hover:shadow-md transition-all">
+      <div className="flex items-center gap-5 w-full lg:w-auto">
+        <div className="relative">
+          <div className="size-14 rounded-full bg-slate-100 overflow-hidden">
+            <Image
+              className="size-full object-cover"
+              src={avatar}
+              alt={name}
+              width={56}
+              height={56}
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className={`absolute bottom-0.5 right-0.5 size-3.5 rounded-full border-2 border-white ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-slate-900">{name}</h3>
+            <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-md ${isOnline ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+              {isOnline ? 'Online' : 'Offline'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500">{personality}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
+        <button
+          onClick={() => router.push(`/debate/challenge?friendId=${id}`)}
+          className="flex-1 lg:flex-none px-6 py-2.5 bg-[#585bf3] text-white text-sm font-bold rounded-xl hover:bg-[#585bf3]/90 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-[#585bf3]/20"
+        >
+          <Swords className="w-4 h-4" />
+          Challenge
+        </button>
+        <button
+          onClick={onChat}
+          className="relative p-2.5 rounded-xl bg-slate-50 text-[#585bf3] hover:bg-slate-100 transition-colors border border-slate-200"
+        >
+          <MessageSquare className="w-5 h-5" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] font-bold h-5 min-w-[20px] rounded-full flex items-center justify-center px-1.5 shadow-sm border-2 border-white pointer-events-none">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ChatModal = ({ user, friend, onClose }: { user: any, friend: any, onClose: () => void }) => {
   const [messages, setMessages] = useState<{ id: string, senderId: string, text: string, createdAt: string }[]>([]);
@@ -242,6 +247,13 @@ export default function FriendManager() {
   const [potentialFriends, setPotentialFriends] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [chatFriend, setChatFriend] = useState<any>(null);
+  const chatFriendRef = React.useRef<string | null>(null);
+
+  // Sync ref with state
+  React.useEffect(() => {
+    chatFriendRef.current = chatFriend?.id || null;
+  }, [chatFriend]);
+
   const [modalSearchQuery, setModalSearchQuery] = useState('');
   const [mainSearchQuery, setMainSearchQuery] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
@@ -343,6 +355,31 @@ export default function FriendManager() {
     return () => clearTimeout(timer);
   }, [modalSearchQuery, user]);
 
+  // Global subscription for unread messages
+  React.useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`global_chat_${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'direct_messages',
+        filter: `receiver_id=eq.${user.id}`
+      }, (payload) => {
+        const senderId = payload.new.sender_id;
+        setUnreadCounts((prev) => {
+          if (chatFriendRef.current === senderId) return prev;
+          return { ...prev, [senderId]: (prev[senderId] || 0) + 1 };
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   const filteredFriends = friends.filter(f =>
     f.name.toLowerCase().includes(mainSearchQuery.toLowerCase()) ||
     f.personality.toLowerCase().includes(mainSearchQuery.toLowerCase())
@@ -427,7 +464,7 @@ export default function FriendManager() {
   };
 
   return (
-    <div className="bg-[#f6f6f8] min-h-screen font-sans text-slate-900">
+    <div className="bg-[#f6f6f8] flex-1 min-w-0 h-full font-sans text-slate-900 flex flex-col">
       <AnimatePresence>
         {chatFriend && user && (
           <ChatModal user={user} friend={chatFriend} onClose={() => setChatFriend(null)} />
@@ -524,9 +561,9 @@ export default function FriendManager() {
           </div>
         )}
       </AnimatePresence>
-      <div className="layout-container flex h-full grow flex-col">
-        <div className="flex flex-1">
-          <Sidebar />
+      <div className="layout-container flex h-full grow flex-col min-h-0">
+        <div className="flex flex-1 min-h-0">
+
 
           {/* Main Content Area */}
           <main className="flex-1 flex flex-col min-w-0 bg-[#f6f6f8] overflow-y-auto no-scrollbar">
@@ -623,6 +660,7 @@ export default function FriendManager() {
                   filteredFriends.map((friend) => (
                     <FriendCard
                       key={friend.id}
+                      id={friend.id}
                       name={friend.name}
                       personality={friend.personality}
                       avatar={friend.avatar}

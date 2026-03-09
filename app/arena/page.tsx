@@ -30,16 +30,6 @@ import { getAIResponse, saveMessage, evaluateDebate, forfeitDebate, concludeDeba
 
 const supabase = createClient();
 
-const friends = [
-  { id: '1', name: 'Sophia Rivers', rank: 'Philosopher King', avatar: 'https://picsum.photos/seed/sophia/100/100' },
-  { id: '2', name: 'Marcus Thorne', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/marcus/100/100' },
-  { id: '3', name: 'Lisa Chen', rank: 'Grand Orator', avatar: 'https://picsum.photos/seed/lisa/100/100' },
-  { id: '4', name: 'David Miller', rank: 'Debate Pro', avatar: 'https://picsum.photos/seed/david/100/100' },
-  { id: '5', name: 'Elena Vance', rank: 'Rhetoric Expert', avatar: 'https://picsum.photos/seed/elena/100/100' },
-  { id: 's0', name: 'Sophia Rivers', rank: 'Philosopher King', avatar: 'https://picsum.photos/seed/sophia/100/100' },
-  { id: 's1', name: 'David Miller', rank: 'Debate Pro', avatar: 'https://picsum.photos/seed/david/100/100' },
-  { id: 's2', name: 'Elena Vance', rank: 'Rhetoric Expert', avatar: 'https://picsum.photos/seed/elena/100/100' },
-];
 
 const models = {
   gemini: { name: 'Gemini 2.5 Flash', provider: 'Google' },
@@ -61,10 +51,10 @@ import { Suspense } from 'react';
 function ArenaContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const mode = searchParams.get('mode') || 'ai';
-  const topic = searchParams.get('topic') || 'The Impact of AI on Creative Arts';
+  const modeFromUrl = searchParams.get('mode') || 'ai';
+  const topicFromUrl = searchParams.get('topic');
   const modelId = searchParams.get('model') || 'gemini';
-  const opponentId = searchParams.get('opponent') || '1';
+  const opponentIdParam = searchParams.get('opponent');
   const timeLimitParam = searchParams.get('timeLimit') || '10';
   const debateDuration = parseInt(timeLimitParam) * 60;
 
@@ -72,6 +62,7 @@ function ArenaContent() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [debateId, setDebateId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
+  const [channelInstance, setChannelInstance] = useState<any>(null);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
@@ -80,21 +71,45 @@ function ArenaContent() {
   const [timeLeft, setTimeLeft] = useState(debateDuration);
   const [isStarted, setIsStarted] = useState(false);
   const [isHistoryView, setIsHistoryView] = useState(false);
-  const [isOpponentOnline, setIsOpponentOnline] = useState(true);
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [isWaitingToStart, setIsWaitingToStart] = useState(false);
+  const [scheduledTimeMs, setScheduledTimeMs] = useState<number | null>(null);
+  const [endTimeMs, setEndTimeMs] = useState<number | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [opponentForfeited, setOpponentForfeited] = useState(false);
+  const [showForfeitWinModal, setShowForfeitWinModal] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const initRef = useRef(false);
 
-  const [historyTopic, setHistoryTopic] = useState(topic);
+  const [historyTopic, setHistoryTopic] = useState(topicFromUrl || 'Loading Topic...');
   const [historyOpponent, setHistoryOpponent] = useState<any>({ name: 'Loading...', avatar: 'https://picsum.photos/seed/placeholder/100/100' });
+  const [activeMode, setActiveMode] = useState<string>(modeFromUrl);
+  const [proParticipant, setProParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: 'https://picsum.photos/seed/pro/100/100' });
+  const [conParticipant, setConParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: 'https://picsum.photos/seed/con/100/100' });
   const startTimeParam = searchParams.get('startTime');
 
-  const selectedOpponent = React.useMemo(() => mode === 'multi'
-    ? friends.find(f => f.id === opponentId) || friends[0]
-    : { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', rank: 'AI Model', avatar: 'https://picsum.photos/seed/ai-bot/100/100' },
-    [mode, opponentId, modelId]);
+  const currentUserRole = (userProfile && conParticipant.id === userProfile.id) ? 'con' : 'pro';
 
+  const selectedOpponent = React.useMemo(() => {
+    if (activeMode === 'ai') {
+      return { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', rank: 'AI Model', avatar: 'https://picsum.photos/seed/ai-bot/100/100' };
+    }
+
+    // Determine opponent based on who the current user IS NOT
+    if (userProfile && proParticipant.id && userProfile.id === proParticipant.id) {
+      return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+    } else if (userProfile && conParticipant.id && userProfile.id === conParticipant.id) {
+      return proParticipant.name !== 'Loading...' ? proParticipant : { name: 'Opponent', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+    }
+
+    // Fallback/Loading
+    return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+  }, [activeMode, modelId, conParticipant, proParticipant, userProfile]);
+
+  // -- Initialization --
   // -- Initialization --
   useEffect(() => {
     async function init() {
@@ -104,6 +119,7 @@ function ArenaContent() {
       // 1. Get User
       const { data: { user } } = await supabase.auth.getUser();
       console.log("DEBUG: Current User:", user?.email);
+      let activeProfile: any = null;
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -111,10 +127,10 @@ function ArenaContent() {
           .eq('id', user.id)
           .single();
         console.log("DEBUG: Profile loaded:", !!profile);
-        setUserProfile(profile || { full_name: user.email?.split('@')[0] || 'User' });
+        activeProfile = profile || { full_name: user.email?.split('@')[0] || 'User' };
+        setUserProfile(activeProfile);
       } else {
         console.warn("DEBUG: No user found during init");
-        // We might want to redirect to login if user is null and not in history view
       }
 
       // 2. Load or Create Debate
@@ -123,8 +139,6 @@ function ArenaContent() {
 
       if (historyId) {
         setIsHistoryView(true);
-        setIsStarted(true);
-        setIsFinished(true);
         setDebateId(historyId);
 
         const { data: debate } = await supabase
@@ -133,95 +147,190 @@ function ArenaContent() {
           .eq('id', historyId)
           .single();
 
+        setIsStarted(true);
+        setIsFinished(true);
+
         if (debate) {
           setHistoryTopic(debate.topic);
           setEvaluationReason(debate.evaluation_reason);
+          setActiveMode(debate.mode);
 
-          const opponentId = debate.pro_user_id === user?.id ? debate.con_user_id : debate.pro_user_id;
+          let currentPro: any = { id: null, name: 'Affirmative', avatar: `https://picsum.photos/seed/pro/100/100` };
+          let currentCon: any = { id: null, name: 'Opposition', avatar: `https://picsum.photos/seed/con/100/100` };
 
-          let opponentName = 'AI Assistant';
-          let opponentAvatar = 'https://picsum.photos/seed/ai/100/100';
-
-          if (opponentId) {
-            const { data: opponentProfile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', opponentId).single();
-            if (opponentProfile) {
-              opponentName = opponentProfile.full_name || 'Opponent';
-              opponentAvatar = opponentProfile.avatar_url || `https://picsum.photos/seed/${opponentId}/100/100`;
+          // Fetch Pro Profile
+          if (debate.pro_user_id) {
+            const { data: proProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.pro_user_id).single();
+            if (proProfile) {
+              currentPro = { id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: proProfile.avatar_url || `https://picsum.photos/seed/${debate.pro_user_id}/100/100` };
+              setProParticipant(currentPro);
             }
           }
 
-          setHistoryOpponent({ name: opponentName, avatar: opponentAvatar });
+          // Fetch Con Profile
+          if (debate.con_user_id) {
+            const { data: conProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.con_user_id).single();
+            if (conProfile) {
+              currentCon = { id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: conProfile.avatar_url || `https://picsum.photos/seed/${debate.con_user_id}/100/100` };
+              setConParticipant(currentCon);
+            }
+          } else if (debate.mode === 'ai') {
+            currentCon = { id: 'ai', name: (models as any)[debate.model || 'gemini']?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-1/100/100' };
+            setConParticipant(currentCon);
+          }
+
+          const myId = user?.id;
+          const oppIsPro = myId === debate.con_user_id;
+          const oppProfile = oppIsPro ? currentPro : currentCon;
+
+          setHistoryOpponent({ name: oppProfile.name, avatar: oppProfile.avatar });
 
           // Helper to resolve winner name
-          if (debate.winner_id === user?.id) {
+          if (debate.winner_id === myId) {
             setWinner('You');
           } else if (debate.winner_id) {
-            setWinner(opponentName);
+            const winProfile = debate.winner_id === currentPro.id ? currentPro : currentCon;
+            setWinner(winProfile.name || 'Opponent');
           } else if (debate.evaluation_reason && debate.evaluation_reason.toLowerCase().includes('tie')) {
             setWinner('Tie');
           } else {
-            setWinner(opponentName); // Assuming AI won if null and not a tie
+            setWinner('Concluded');
           }
         }
 
         const { data: histMessages } = await supabase.from('messages').select('*').eq('debate_id', historyId).order('created_at', { ascending: true });
         if (histMessages) setMessages(histMessages);
-      } else if (existingId) {
-        setDebateId(existingId);
-        setIsStarted(true);
-        const { data: initialMessages } = await supabase.from('messages').select('*').eq('debate_id', existingId).order('created_at', { ascending: true });
-        if (initialMessages) setMessages(initialMessages);
-      } else if (mode === 'ai') {
-        if (user) {
-          console.log("DEBUG: Creating NEW AI Debate for topic:", topic);
+      } else if (existingId || (modeFromUrl === 'ai' && user)) {
+        if (existingId) {
+          setDebateId(existingId);
+
+          const { data: debate } = await supabase
+            .from('debates')
+            .select('*')
+            .eq('id', existingId)
+            .single();
+
+          if (debate) {
+            setHistoryTopic(debate.topic);
+            setActiveMode(debate.mode);
+
+            let baseDuration = debate.time_limit ? debate.time_limit * 60 : 600;
+            let startMs = debate.scheduled_at ? new Date(debate.scheduled_at).getTime() : new Date(debate.created_at || Date.now()).getTime();
+            let currentEndMs = startMs + baseDuration * 1000;
+
+            setEndTimeMs(currentEndMs);
+
+            if (debate.scheduled_at) {
+              setScheduledTimeMs(startMs);
+              if (Date.now() < startMs) {
+                setIsWaitingToStart(true);
+                setTimeLeft(baseDuration);
+              } else {
+                const remaining = Math.max(0, Math.floor((currentEndMs - Date.now()) / 1000));
+                setTimeLeft(remaining);
+                if (remaining <= 0) setIsFinished(true);
+              }
+            } else {
+              const remaining = Math.max(0, Math.floor((currentEndMs - Date.now()) / 1000));
+              setTimeLeft(remaining);
+              if (remaining <= 0) setIsFinished(true);
+            }
+
+
+            // Fetch Pro Profile
+            if (debate.pro_user_id) {
+              const { data: proProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.pro_user_id).single();
+              if (proProfile) {
+                setProParticipant({ id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: proProfile.avatar_url || `https://picsum.photos/seed/${debate.pro_user_id}/100/100` });
+              }
+            }
+
+            // Fetch Con Profile
+            if (debate.con_user_id) {
+              const { data: conProfile } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', debate.con_user_id).single();
+              if (conProfile) {
+                setConParticipant({ id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: conProfile.avatar_url || `https://picsum.photos/seed/${debate.con_user_id}/100/100` });
+              }
+            } else if (debate.mode === 'ai') {
+              setConParticipant({ id: 'ai', name: (models as any)[debate.model]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-2/100/100' });
+            }
+          }
+
+          if (debate && debate.scheduled_at && Date.now() < new Date(debate.scheduled_at).getTime()) {
+            setIsStarted(false);
+          } else {
+            setIsStarted(true);
+          }
+
+          const { data: initialMessages } = await supabase.from('messages').select('*').eq('debate_id', existingId).order('created_at', { ascending: true });
+          if (initialMessages) setMessages(initialMessages);
+        } else if (modeFromUrl === 'ai' && user) {
+          console.log("DEBUG: Creating NEW AI Debate for topic:", topicFromUrl);
           const { data: newDebate, error } = await supabase
             .from('debates')
             .insert({
-              topic,
+              topic: topicFromUrl || 'AI Debate',
               time_limit: parseInt(timeLimitParam),
               mode: 'ai',
               status: 'live',
-              pro_user_id: user.id
+              pro_user_id: user.id,
+              model: modelId
             })
             .select().single();
 
           if (error) {
             console.error("DEBUG: New AI Debate INSERT FAILED:", JSON.stringify(error));
-            console.error("RAW ERROR OBJECT:", error);
+            setIsInitialLoading(false);
             return;
           }
 
           if (newDebate) {
-            console.log("DEBUG: New AI Debate created with ID:", newDebate.id);
             setDebateId(newDebate.id);
+            setHistoryTopic(newDebate.topic);
             setIsStarted(true);
+            setProParticipant({ id: user.id, name: activeProfile?.full_name || 'User', avatar: activeProfile?.avatar_url || `https://picsum.photos/seed/${user.id}/100/100` });
+            setConParticipant({ id: 'ai', name: (models as any)[modelId]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-3/100/100' });
+
+            let baseDuration = newDebate.time_limit ? newDebate.time_limit * 60 : 600;
+            let startMs = new Date(newDebate.created_at || Date.now()).getTime();
+            const calculatedEndMs = startMs + baseDuration * 1000;
+            setEndTimeMs(calculatedEndMs);
+
+            const remaining = Math.max(0, Math.floor((calculatedEndMs - Date.now()) / 1000));
+            setTimeLeft(remaining);
+            if (remaining <= 0) setIsFinished(true);
 
             // Auto-start with a dynamic opening
             setIsThinking(true);
-            await getAIResponse(newDebate.id, topic, []);
+            await getAIResponse(newDebate.id, newDebate.topic, []);
             setIsThinking(false);
 
             // Re-fetch to satisfy subscription race
             const { data: finalMessages } = await supabase.from('messages').select('*').eq('debate_id', newDebate.id).order('created_at', { ascending: true });
             if (finalMessages) setMessages(finalMessages);
           }
-        } else {
-          console.error("DEBUG: Cannot create AI debate - no user session");
         }
       } else {
-        // For other modes, we still want the UI to be interactive if topic is present
         setIsStarted(true);
       }
+      setIsInitialLoading(false);
     }
     init();
-  }, [searchParams, mode, topic, timeLimitParam]);
+  }, [searchParams, activeMode, historyTopic, timeLimitParam, modelId]);
 
   // -- Real-time Sync --
   useEffect(() => {
     if (!debateId) return;
 
+    // Use a shared channel name so both participants connect to the same presence channel
+    const channelName = `arena-${debateId}`;
     const channel = supabase
-      .channel(`arena-${debateId}`)
+      .channel(channelName, {
+        config: {
+          broadcast: { ack: true },
+          presence: { key: userProfile?.id || '' }
+        },
+      })
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -233,39 +342,95 @@ function ArenaContent() {
           if (prev.some(m => m.id === payload.new.id)) return prev;
           return [...prev, payload.new];
         });
-
-        // We now trigger AI response directly from handleSend to be more reliable
-        // and avoid race conditions with the real-time subscription.
       })
-      .subscribe();
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'debates',
+        filter: `id=eq.${debateId}`
+      }, (payload) => {
+        const newDebate = payload.new;
+        if (newDebate.status === 'concluded' && newDebate.evaluation_reason?.includes('forfeited')) {
+          setOpponentForfeited(true);
+          if (newDebate.winner_id === userProfile?.id) {
+            setShowForfeitWinModal(true);
+          }
+        }
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const newState = channel.presenceState();
+        // Flatten state to get unique user IDs present in the channel
+        const userIds = new Set<string>();
+        for (const id in newState) {
+          const presences = newState[id] as any[];
+          presences.forEach(p => {
+            if (p.user_id) userIds.add(p.user_id);
+          });
+        }
+        setOnlineUsers(userIds);
+      })
+      .on('broadcast', { event: 'new_message' }, () => {
+        // Fallback: If broadcast tells us there's a new message, cleanly fetch latest
+        supabase
+          .from('messages')
+          .select('*')
+          .eq('debate_id', debateId)
+          .order('created_at', { ascending: true })
+          .then(({ data: latest }) => {
+            if (latest) {
+              setMessages(prev => {
+                const tempMessages = prev.filter(m => m.id && String(m.id).startsWith('temp-'));
+                return [...latest, ...tempMessages];
+              });
+            }
+          });
+      });
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        // Track our presence!
+        if (userProfile?.id) {
+          await channel.track({ user_id: userProfile.id });
+        }
+
+        // Fetch missing messages just in case any were sent during the connection phase!
+        supabase
+          .from('messages')
+          .select('*')
+          .eq('debate_id', debateId)
+          .order('created_at', { ascending: true })
+          .then(({ data: latest }) => {
+            if (latest) {
+              setMessages(prev => {
+                const tempMessages = prev.filter(m => m.id && String(m.id).startsWith('temp-'));
+                // Ensure we don't duplicate messages that already arrived in latest but we still had temp array
+                // Replacing cleanly works fine but we want to retain unresolved temp messages.
+                return [...latest, ...tempMessages];
+              });
+            }
+          });
+      }
+    });
+
+    setChannelInstance(channel);
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
+      setChannelInstance(null);
     };
-  }, [debateId, mode]);
+  }, [debateId, userProfile]);
 
-  useEffect(() => {
-    if (mode === 'ai') {
-      setIsOpponentOnline(true);
-      return;
-    }
-    const interval = setInterval(() => {
-      if (Math.random() > 0.9) {
-        setIsOpponentOnline(prev => !prev);
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [mode]);
+  // Removed random interval logic for opponent online status
 
   const handleAIResponse = async (userText: string) => {
     if (!debateId) return;
     setIsThinking(true);
     try {
       const historyForAi = messages.map(m => ({ role: m.role, content: m.content }));
-      historyForAi.push({ role: 'pro', content: userText });
+      historyForAi.push({ role: currentUserRole, content: userText });
 
       console.log("DEBUG: Calling getAIResponse for debate:", debateId);
-      const result = await getAIResponse(debateId, topic, historyForAi);
+      const result = await getAIResponse(debateId, historyTopic, historyForAi);
 
       if (result.error) {
         console.error("DEBUG: getAIResponse returned error:", result.error);
@@ -311,48 +476,96 @@ function ArenaContent() {
     const content = input;
     setInput('');
 
-    try {
-      const authorName = userProfile.full_name || userProfile.username || 'User';
-      console.log("DEBUG: Calling saveMessage...", { debateId, role: 'pro', authorName });
+    const authorName = userProfile.full_name || userProfile.username || 'User';
 
-      const result = await saveMessage(debateId, content, 'pro', authorName);
+    // Optimistic Update
+    const tempId = `temp-${Date.now()}`;
+    setMessages(prev => [...prev, {
+      id: tempId,
+      debate_id: debateId,
+      role: currentUserRole,
+      author_name: authorName,
+      author: authorName,
+      content,
+      created_at: new Date().toISOString()
+    }]);
+
+    try {
+      console.log("DEBUG: Calling saveMessage...", { debateId, role: currentUserRole, authorName });
+
+      const result = await saveMessage(debateId, content, currentUserRole, authorName);
 
       if (result.success) {
         console.log("DEBUG: saveMessage success return");
         // Manually trigger a refresh to be safe
         const { data: latest } = await supabase.from('messages').select('*').eq('debate_id', debateId).order('created_at', { ascending: true });
-        if (latest) setMessages(latest);
+        if (latest) {
+          setMessages(prev => {
+            const tempMessages = prev.filter(m => m.id && String(m.id).startsWith('temp-') && m.id !== tempId);
+            return [...latest, ...tempMessages];
+          });
+        }
 
         // Trigger AI response immediately if in AI mode
-        if (mode === 'ai') {
+        if (activeMode === 'ai') {
           await handleAIResponse(content);
+        } else if (channelInstance) {
+          // Broadcast to opponent so they catch up instantly
+          channelInstance.send({
+            type: 'broadcast',
+            event: 'new_message',
+            payload: { success: true }
+          }).catch(console.error);
         }
       } else {
         console.error("DEBUG: saveMessage returned success:false", result);
+        setMessages(prev => prev.filter(m => m.id !== tempId));
       }
     } catch (err) {
       console.error("DEBUG: handleSend exception:", err);
+      setMessages(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
   // -- Timer & Scroll --
   useEffect(() => {
-    if (!isStarted || isFinished) return;
+    if (!isStarted || isFinished || isWaitingToStart || !endTimeMs) return;
+
+    const immediateRemaining = Math.max(0, Math.floor((endTimeMs - Date.now()) / 1000));
+    setTimeLeft(immediateRemaining);
+    if (immediateRemaining <= 0) {
+      setIsFinished(true);
+      return;
+    }
+
     const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          setIsFinished(true);
-          return 0;
-        }
-        return prev - 1;
-      });
+      const remaining = Math.max(0, Math.floor((endTimeMs - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        setIsFinished(true);
+        clearInterval(timer);
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, [isStarted, isFinished]);
+  }, [isStarted, isFinished, isWaitingToStart, endTimeMs]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isThinking]);
+
+  // -- Waiting to Start Check --
+  useEffect(() => {
+    if (!isWaitingToStart || !scheduledTimeMs) return;
+
+    const checkInterval = setInterval(() => {
+      if (Date.now() >= scheduledTimeMs) {
+        setIsWaitingToStart(false);
+        setIsStarted(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
+  }, [isWaitingToStart, scheduledTimeMs]);
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -366,7 +579,7 @@ function ArenaContent() {
   };
 
   const handleExit = (targetHref?: string) => {
-    if (isFinished) {
+    if (isFinished || isWaitingToStart) {
       router.push(targetHref || '/debates');
       return true;
     }
@@ -376,6 +589,7 @@ function ArenaContent() {
   };
 
   const confirmExit = async () => {
+    setIsExiting(true);
     if (debateId) {
       try {
         await forfeitDebate(debateId);
@@ -384,18 +598,20 @@ function ArenaContent() {
       }
     }
     router.push(pendingHref || '/debates');
-    setShowExitModal(false);
+    // We intentionally DO NOT set showExitModal to false here
+    // so the modal overlay stays visible while Next.js transitions,
+    // thereby hiding the chat window underneath.
   };
 
   useEffect(() => {
-    if (!isFinished || isHistoryView || !debateId || !userProfile) return;
+    if (!isFinished || isHistoryView || !debateId || !userProfile || opponentForfeited) return;
 
     async function concludeDebateProcess() {
       // Show "Calculating..." while waiting for AI
       setWinner('Calculating...');
 
       const userProfileName = userProfile?.full_name || 'User';
-      const debateTopic = topic || 'Unknown Topic';
+      const debateTopic = historyTopic || 'Unknown Topic';
       const evaluation = await evaluateDebate(debateId as string, debateTopic, messages, userProfileName, selectedOpponent.name);
 
       let finalWinner = 'Tie';
@@ -416,15 +632,22 @@ function ArenaContent() {
       await concludeDebate(debateId as string, winnerId, evaluation.reasoning || 'No reasoning provided.');
     }
     concludeDebateProcess();
-  }, [isFinished, isHistoryView, debateId, messages, userProfile, selectedOpponent.name]);
+  }, [isFinished, isHistoryView, debateId, messages, userProfile, selectedOpponent.name, opponentForfeited]);
 
   const time = formatTime(timeLeft);
 
   return (
-    <div className="bg-[#f6f6f8] min-h-screen flex font-sans overflow-hidden">
+    <div className="bg-[#f6f6f8] h-screen flex font-sans overflow-hidden">
       <Sidebar onNavigate={(href) => handleExit(href)} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        {!isStarted && startTimeParam ? (
+        {isInitialLoading ? (
+          <main className="flex-1 flex items-center justify-center p-8">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-12 h-12 text-[#585bf3] animate-spin" />
+              <p className="text-slate-500 font-medium animate-pulse">Entering Arena...</p>
+            </div>
+          </main>
+        ) : !isStarted && startTimeParam ? (
           <main className="flex-1 flex items-center justify-center p-8">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -504,13 +727,18 @@ function ArenaContent() {
               {/* Simple Header with Topic */}
               <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white">
                 <div>
-                  <h1 className="text-xl font-bold text-slate-900">{isHistoryView ? historyTopic : topic}</h1>
+                  <h1 className="text-xl font-bold text-slate-900">{historyTopic}</h1>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-[10px] font-bold text-[#585bf3] uppercase tracking-widest">
-                      {isHistoryView ? 'Debate Archive' : 'Live Debate Session'}
+                      {isHistoryView ? 'Debate Archive' : (isWaitingToStart ? 'Scheduled Debate' : 'Live Debate Session')}
                     </p>
-                    {!isHistoryView && startTimeParam && new Date(startTimeParam).getTime() < Date.now() && (
-                      <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-md uppercase tracking-wider animate-pulse">
+                    {!isHistoryView && isWaitingToStart && (
+                      <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-md uppercase tracking-wider animate-pulse whitespace-nowrap">
+                        Waiting for Start Time
+                      </span>
+                    )}
+                    {!isHistoryView && startTimeParam && !isWaitingToStart && new Date(startTimeParam).getTime() < Date.now() && (
+                      <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-md uppercase tracking-wider animate-pulse whitespace-nowrap">
                         Late Entry
                       </span>
                     )}
@@ -519,12 +747,12 @@ function ArenaContent() {
                 <div className="flex items-center gap-4">
                   <div className="flex -space-x-2">
                     <div className="size-8 rounded-full border-2 border-white bg-blue-100 overflow-hidden relative">
-                      <Image alt="Alex" src="https://picsum.photos/seed/alex/100/100" width={32} height={32} referrerPolicy="no-referrer" />
-                      <div className="absolute bottom-0 right-0 size-2 rounded-full border border-white bg-emerald-500" />
+                      <Image alt={proParticipant.name} src={proParticipant.avatar} width={32} height={32} referrerPolicy="no-referrer" />
+                      <div className={`absolute bottom-0 right-0 size-2 rounded-full border border-white ${isHistoryView ? 'bg-slate-300' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-500' : 'bg-slate-300')}`} />
                     </div>
                     <div className="size-8 rounded-full border-2 border-white bg-rose-100 overflow-hidden relative">
-                      <Image alt={isHistoryView ? historyOpponent.name : selectedOpponent.name} src={isHistoryView ? historyOpponent.avatar : selectedOpponent.avatar} width={32} height={32} referrerPolicy="no-referrer" />
-                      <div className={`absolute bottom-0 right-0 size-2 rounded-full border border-white ${isHistoryView ? 'bg-slate-300' : (isOpponentOnline ? 'bg-emerald-500' : 'bg-slate-300')}`} />
+                      <Image alt={isHistoryView ? historyOpponent.name : conParticipant.name} src={isHistoryView ? historyOpponent.avatar : conParticipant.avatar} width={32} height={32} referrerPolicy="no-referrer" />
+                      <div className={`absolute bottom-0 right-0 size-2 rounded-full border border-white ${isHistoryView ? 'bg-slate-300' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-500' : 'bg-slate-300')}`} />
                     </div>
                   </div>
                   <button
@@ -537,22 +765,22 @@ function ArenaContent() {
               </div>
 
               {/* Chat Stream / Messages */}
-              <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
+              <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8">
                 <AnimatePresence>
                   {messages.map((msg) => (
                     <motion.div
                       key={msg.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className={`flex flex-col ${msg.role === 'pro' ? 'items-start' : 'items-end'} gap-2 max-w-[80%] ${msg.role === 'con' ? 'ml-auto' : ''}`}
+                      className={`flex flex-col ${msg.role === currentUserRole ? 'items-end' : 'items-start'} gap-2 max-w-[80%] ${msg.role === currentUserRole ? 'ml-auto' : ''}`}
                     >
-                      <div className={`flex items-center gap-2 mb-1 ${msg.role === 'con' ? 'flex-row-reverse' : ''}`}>
+                      <div className={`flex items-center gap-2 mb-1 ${msg.role === currentUserRole ? 'flex-row-reverse' : ''}`}>
                         <span className="text-xs font-bold text-slate-900">{msg.author_name || msg.author}</span>
                         <span className="text-[10px] text-slate-400 font-medium">
                           {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (msg.timestamp || '')}
                         </span>
                       </div>
-                      <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'pro'
+                      <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role !== currentUserRole
                         ? 'bg-white border border-slate-100 rounded-tl-none text-slate-800'
                         : 'bg-[#585bf3] text-white rounded-tr-none'
                         }`}>
@@ -579,6 +807,35 @@ function ArenaContent() {
                   </motion.div>
                 )}
               </div>
+
+              {/* Waiting to Start Overlay */}
+              <AnimatePresence>
+                {isWaitingToStart && !isHistoryView && scheduledTimeMs && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-white/80 backdrop-blur-md z-40 flex flex-col items-center justify-center p-8 text-center"
+                  >
+                    <div className="size-24 bg-amber-100 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-inner shadow-amber-200/50">
+                      <Timer className="w-12 h-12 text-amber-600 animate-pulse" />
+                    </div>
+                    <h2 className="text-3xl font-black text-slate-900 mb-4">Debate Starting Soon</h2>
+                    <p className="text-slate-600 font-medium text-lg max-w-md mx-auto mb-8 leading-relaxed">
+                      The arena is locked until the scheduled start time. Use this time to prepare your arguments.
+                    </p>
+                    <div className="bg-white rounded-2xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100 min-w-[300px]">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Scheduled For</p>
+                      <p className="text-2xl font-black text-[#585bf3]">
+                        {new Date(scheduledTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                      <p className="text-sm font-bold text-slate-500 mt-1">
+                        {new Date(scheduledTimeMs).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Debate Concluded Overlay */}
               <AnimatePresence>
@@ -632,6 +889,43 @@ function ArenaContent() {
 
               {/* Exit Confirmation Modal */}
               <AnimatePresence>
+                {showForfeitWinModal && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-8"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                      animate={{ scale: 1, opacity: 1, y: 0 }}
+                      className="bg-white rounded-[40px] p-10 max-w-md w-full text-center shadow-2xl space-y-8"
+                    >
+                      <div className="size-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto">
+                        <Trophy className="w-10 h-10 text-emerald-600" />
+                      </div>
+
+                      <div className="space-y-3">
+                        <h2 className="text-2xl font-black text-slate-900">Opponent Fled!</h2>
+                        <p className="text-slate-500 font-medium leading-relaxed">
+                          Your opponent has abandoned the debate. You emerge victorious by default!
+                        </p>
+                      </div>
+
+                      <div className="pt-2">
+                        <Link
+                          href="/debates?tab=history"
+                          className="block w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
+                        >
+                          Claim Victory
+                        </Link>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Exit Confirmation Modal */}
+              <AnimatePresence>
                 {showExitModal && (
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -659,13 +953,22 @@ function ArenaContent() {
                       <div className="flex flex-col gap-3 pt-2">
                         <button
                           onClick={confirmExit}
-                          className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-600/20"
+                          disabled={isExiting}
+                          className="flex items-center justify-center gap-2 w-full py-4 bg-rose-600 text-white rounded-2xl font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Yes, Exit and Forfeit
+                          {isExiting ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              Exiting...
+                            </>
+                          ) : (
+                            "Yes, Exit and Forfeit"
+                          )}
                         </button>
                         <button
                           onClick={() => setShowExitModal(false)}
-                          className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+                          disabled={isExiting}
+                          className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Stay and Fight
                         </button>
@@ -681,17 +984,17 @@ function ArenaContent() {
                   <div className="flex-1 relative">
                     <input
                       className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder={isFinished ? "Debate has ended" : (isStarted ? "Type your argument..." : "Debate hasn't started yet")}
+                      placeholder={isFinished ? "Debate has ended" : (isWaitingToStart ? "Waiting for debate start time..." : (isStarted ? "Type your argument..." : "Loading..."))}
                       type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                      disabled={!isStarted || isFinished}
+                      disabled={!isStarted || isFinished || isWaitingToStart}
                     />
                   </div>
                   <button
                     onClick={handleSend}
-                    disabled={!isStarted || !input.trim() || isFinished || !debateId}
+                    disabled={!isStarted || !input.trim() || isFinished || !debateId || isWaitingToStart}
                     className="bg-[#585bf3] text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-[#585bf3]/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
                   >
                     <Send className="w-4 h-4" />
@@ -742,31 +1045,34 @@ function ArenaContent() {
               <div className="space-y-4">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Opponents</h3>
                 <div className="space-y-3">
+                  {/* Affirmative Participant */}
                   <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative">
                     <div className="size-10 rounded-full bg-blue-100 overflow-hidden ring-2 ring-blue-50 relative">
-                      <Image alt="Alex" className="w-full h-full object-cover" src="https://picsum.photos/seed/alex/100/100" width={40} height={40} referrerPolicy="no-referrer" />
-                      <div className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-emerald-500" />
+                      <Image alt={proParticipant.name} className="w-full h-full object-cover" src={proParticipant.avatar} width={40} height={40} referrerPolicy="no-referrer" />
+                      <div className={`absolute bottom-0 right-0 size-3 rounded-full border-2 border-white ${isHistoryView ? 'bg-slate-300' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-500' : 'bg-slate-300')}`} />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-slate-900">Alex Rivera</p>
-                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600">
-                          {isHistoryView ? 'Archived' : 'In Arena'}
+                        <p className="text-sm font-bold text-slate-900">{proParticipant.name}</p>
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
+                          {isHistoryView ? 'Archived' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'In Arena' : 'Away')}
                         </span>
                       </div>
                       <p className="text-[10px] font-bold text-blue-500 uppercase">Affirmative</p>
                     </div>
                   </div>
+
+                  {/* Opposition Participant */}
                   <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative">
                     <div className="size-10 rounded-full bg-rose-100 overflow-hidden ring-2 ring-rose-50 relative">
-                      <Image alt={isHistoryView ? historyOpponent.name : selectedOpponent.name} className="w-full h-full object-cover" src={isHistoryView ? historyOpponent.avatar : selectedOpponent.avatar} width={40} height={40} referrerPolicy="no-referrer" />
-                      <div className={`absolute bottom-0 right-0 size-3 rounded-full border-2 border-white ${isHistoryView ? 'bg-slate-300' : (isOpponentOnline ? 'bg-emerald-500' : 'bg-slate-300')}`} />
+                      <Image alt={isHistoryView ? historyOpponent.name : conParticipant.name} className="w-full h-full object-cover" src={isHistoryView ? historyOpponent.avatar : conParticipant.avatar} width={40} height={40} referrerPolicy="no-referrer" />
+                      <div className={`absolute bottom-0 right-0 size-3 rounded-full border-2 border-white ${isHistoryView ? 'bg-slate-300' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-500' : 'bg-slate-300')}`} />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-slate-900">{isHistoryView ? historyOpponent.name : selectedOpponent.name}</p>
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : (isOpponentOnline ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
-                          {isHistoryView ? 'Archived' : (isOpponentOnline ? 'In Arena' : 'Away')}
+                        <p className="text-sm font-bold text-slate-900">{isHistoryView ? historyOpponent.name : conParticipant.name}</p>
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
+                          {isHistoryView ? 'Archived' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'In Arena' : 'Away')}
                         </span>
                       </div>
                       <p className="text-[10px] font-bold text-rose-500 uppercase">Opposition</p>

@@ -17,7 +17,11 @@ import { createClient } from '@/lib/supabase/client';
 
 const SidebarLink = ({ icon: Icon, label, href, onClick }: { icon: any, label: string, href: string, onClick?: (e: React.MouseEvent) => void }) => {
   const pathname = usePathname();
-  const active = pathname === href;
+
+  // The Home button (href '/mode-selection') should also be active on debate setup pages
+  const isHomeLink = href === '/mode-selection';
+  const isDebateSetup = pathname?.startsWith('/debate/challenge') || pathname?.startsWith('/debate/practice');
+  const active = pathname === href || (isHomeLink && isDebateSetup);
 
   return (
     <Link

@@ -219,7 +219,7 @@ export async function deleteDebate(debateId: string) {
     // First check if the user is a participant
     const { data: debate, error: fetchError } = await supabase
         .from('debates')
-        .select('pro_user_id, con_user_id')
+        .select('pro_user_id, con_user_id, pro_deleted, con_deleted')
         .eq('id', debateId)
         .single();
 
@@ -233,9 +233,24 @@ export async function deleteDebate(debateId: string) {
         return { success: false, error: 'Unauthorized' };
     }
 
+    const isPro = debate.pro_user_id === user.id;
+    const isCon = debate.con_user_id === user.id;
+
+    const updates: any = {};
+    if (isPro) updates.pro_deleted = true;
+    if (isCon) updates.con_deleted = true;
+
+    // Check if both sides will be deleted after this operation
+    const willProBeDeleted = isPro ? true : debate.pro_deleted;
+    const willConBeDeleted = isCon ? true : debate.con_deleted;
+
+    if (willProBeDeleted && willConBeDeleted) {
+        updates.status = 'cancelled';
+    }
+
     const { error, count } = await supabase
         .from('debates')
-        .update({ status: 'cancelled' }, { count: 'exact' })
+        .update(updates, { count: 'exact' })
         .eq('id', debateId);
 
     if (error) {

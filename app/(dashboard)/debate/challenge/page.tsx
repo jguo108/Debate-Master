@@ -9,11 +9,12 @@ import {
   ArrowRight,
   MessageSquare,
   Zap,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import Sidebar from '@/components/Sidebar';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -58,9 +59,14 @@ function ChallengeFriendContent() {
           status: 'Online' // Mocked online status
         })));
       }
+
+      const friendId = searchParams.get('friendId');
+      if (friendId) {
+        setSelectedFriend(friendId);
+      }
     }
     init();
-  }, []);
+  }, [searchParams]);
 
   const filteredFriends = friendsList.filter(f =>
     f.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -68,9 +74,16 @@ function ChallengeFriendContent() {
 
   const handleSendChallenge = async () => {
     if (!topic || !selectedFriend || !date || !time || !user) return;
-    setIsSubmitting(true);
 
-    const scheduledAt = new Date(`${date}T${time}`).toISOString();
+    const scheduledAt = new Date(`${date}T${time}`);
+    const now = new Date();
+
+    if (scheduledAt <= now) {
+      alert("You cannot schedule a debate in the past. Please choose a future date and time.");
+      return;
+    }
+
+    setIsSubmitting(true);
 
     const { data: newDebate, error } = await supabase
       .from('debates')
@@ -81,11 +94,12 @@ function ChallengeFriendContent() {
         status: 'pending',
         mode: 'multi',
         time_limit: parseInt(timeLimit),
-        scheduled_at: scheduledAt
+        scheduled_at: scheduledAt.toISOString()
       })
       .select().single();
 
     if (!error && newDebate) {
+      router.refresh();
       router.push(`/debates?tab=pending`);
     } else {
       setIsSubmitting(false);
@@ -94,9 +108,11 @@ function ChallengeFriendContent() {
     }
   };
 
+  const today = new Date().toISOString().split('T')[0];
+
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f6f6f8]">
-      <Sidebar />
+    <div className="flex flex-1 min-w-0 h-full overflow-hidden bg-[#f6f6f8]">
+
 
       <main className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
         <div className="px-8 py-12 max-w-4xl mx-auto w-full">
@@ -201,6 +217,7 @@ function ChallengeFriendContent() {
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">Date</label>
                       <input
                         type="date"
+                        min={today}
                         className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none font-medium"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
@@ -244,12 +261,21 @@ function ChallengeFriendContent() {
                 <div className="flex justify-center pt-4">
                   <button
                     onClick={handleSendChallenge}
-                    disabled={!topic || !selectedFriend || !date || !time}
-                    className="group flex items-center gap-3 bg-[#585bf3] hover:bg-[#585bf3]/90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black text-xl px-12 py-5 rounded-full shadow-xl shadow-[#585bf3]/20 transition-all active:scale-95"
+                    disabled={!topic || !selectedFriend || !date || !time || isSubmitting}
+                    className="group flex items-center gap-3 bg-[#585bf3] hover:bg-[#585bf3]/90 disabled:bg-[#585bf3]/70 disabled:cursor-not-allowed text-white font-black text-xl px-12 py-5 rounded-full shadow-xl shadow-[#585bf3]/20 transition-all active:scale-95"
                   >
-                    <Zap className="w-6 h-6 fill-current" />
-                    Send Challenge
-                    <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        Initiating Challenge...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-6 h-6 fill-current" />
+                        Send Challenge
+                        <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

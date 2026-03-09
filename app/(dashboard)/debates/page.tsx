@@ -22,7 +22,7 @@ import {
 import { deleteDebate } from '@/app/actions/debate';
 import Link from 'next/link';
 import Image from 'next/image';
-import Sidebar from '@/components/Sidebar';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -75,6 +75,22 @@ function DebatesContent() {
     return 'history';
   });
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    action: () => Promise<void> | void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    confirmText: "Confirm",
+    action: () => { }
+  });
+
+  const [selectedDebate, setSelectedDebate] = useState<any | null>(null);
+
   const fetchDebatesData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { histories: [], scheduled: [], pending: [] };
@@ -83,7 +99,8 @@ function DebatesContent() {
       .from('debates')
       .select(`*`)
       .eq('status', 'concluded')
-      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`)
+      .order('created_at', { ascending: false });
 
     const schedPromise = supabase
       .from('debates')
@@ -91,14 +108,16 @@ function DebatesContent() {
       .eq('status', 'scheduled')
       .neq('mode', 'ai')
       .neq('status', 'cancelled')
-      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`)
+      .order('scheduled_at', { ascending: false });
 
     const pendPromise = supabase
       .from('debates')
       .select(`*`)
       .eq('status', 'pending')
       .neq('status', 'cancelled')
-      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`);
+      .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`)
+      .order('created_at', { ascending: false });
 
     const [histRes, schedRes, pendRes] = await Promise.all([histPromise, schedPromise, pendPromise]);
 
@@ -134,37 +153,49 @@ function DebatesContent() {
       };
     };
 
-    const enrichedHist = (histRes.data || []).map(d => {
-      const opp = mapOpponent(d);
-      return {
-        id: d.id,
-        title: d.topic,
-        outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
-        date: new Date(d.created_at).toLocaleDateString(),
-        opponent: opp.name,
-        image: `https://picsum.photos/seed/${d.id}/600/400`,
-        score: "N/A"
-      };
-    });
+    const enrichedHist = (histRes.data || [])
+      .filter(d => {
+        if (d.pro_user_id === user.id && d.pro_deleted) return false;
+        if (d.con_user_id === user.id && d.con_deleted) return false;
+        return true;
+      })
+      .map(d => {
+        const opp = mapOpponent(d);
+        return {
+          id: d.id,
+          title: d.topic,
+          outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
+          date: new Date(d.created_at).toLocaleDateString(),
+          opponent: opp.name,
+          image: `https://picsum.photos/seed/${d.id}/600/400`,
+          score: "N/A"
+        };
+      });
 
-    const enrichedSched = (schedRes.data || []).map(d => {
-      const opp = mapOpponent(d);
-      const scheduledTime = new Date(d.scheduled_at || d.created_at).getTime();
-      const limitMs = (d.time_limit || 10) * 60 * 1000;
-      const isOverdue = Date.now() > (scheduledTime + limitMs);
+    const enrichedSched = (schedRes.data || [])
+      .filter(d => {
+        if (d.pro_user_id === user.id && d.pro_deleted) return false;
+        if (d.con_user_id === user.id && d.con_deleted) return false;
+        return true;
+      })
+      .map(d => {
+        const opp = mapOpponent(d);
+        const scheduledTime = new Date(d.scheduled_at || d.created_at).getTime();
+        const limitMs = (d.time_limit || 10) * 60 * 1000;
+        const isOverdue = Date.now() > (scheduledTime + limitMs);
 
-      return {
-        id: d.id,
-        title: d.topic,
-        date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
-        time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        timeLimit: d.time_limit.toString(),
-        opponent: opp.name,
-        avatar: opp.avatar,
-        mode: d.mode,
-        isOverdue
-      };
-    });
+        return {
+          id: d.id,
+          title: d.topic,
+          date: new Date(d.scheduled_at || d.created_at).toLocaleDateString(),
+          time: new Date(d.scheduled_at || d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timeLimit: d.time_limit.toString(),
+          opponent: opp.name,
+          avatar: opp.avatar,
+          mode: d.mode,
+          isOverdue
+        };
+      });
 
     const enrichedPend = (pendRes.data || []).map(d => {
       const isSent = d.pro_user_id === user.id;
@@ -191,12 +222,36 @@ function DebatesContent() {
     revalidateOnFocus: false
   });
 
+  useEffect(() => {
+    // Subscribe to all changes in the debates table
+    const channel = supabase
+      .channel('debates-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'debates'
+        },
+        (payload) => {
+          console.log('Debate update detected, revalidating...', payload);
+          mutate();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [mutate]);
+
   const histories = data?.histories || [];
   const scheduled = data?.scheduled || [];
   const pending = data?.pending || [];
   const loading = isLoading;
 
-  const handleAccept = async (id: string) => {
+  const handleAccept = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     try {
       const { error } = await supabase
         .from('debates')
@@ -225,64 +280,78 @@ function DebatesContent() {
     }
   };
 
-  const handleDecline = async (id: string, isSenderCancel = false) => {
+  const handleDecline = async (e: React.MouseEvent, id: string, isSenderCancel = false) => {
+    e.stopPropagation();
     const actionName = isSenderCancel ? "cancel request" : "decline debate";
-    if (confirm(`Are you sure you want to ${actionName}?`)) {
-      try {
-        const { error } = await supabase
-          .from('debates')
-          .delete()
-          .eq('id', id);
+    setConfirmModal({
+      isOpen: true,
+      title: isSenderCancel ? "Cancel Request" : "Decline Debate",
+      message: `Are you sure you want to ${actionName}?`,
+      confirmText: isSenderCancel ? "Yes" : "Decline",
+      action: async () => {
+        try {
+          const { error } = await supabase
+            .from('debates')
+            .update({ status: 'cancelled' })
+            .eq('id', id);
 
-        if (error) {
-          console.error(`Failed to ${actionName}:`, error);
-          return;
+          if (error) {
+            console.error(`Failed to ${actionName}:`, error);
+            return;
+          }
+
+          mutate((currentData: any) => {
+            if (!currentData) return currentData;
+            return {
+              ...currentData,
+              pending: currentData.pending.filter((p: any) => p.id !== id)
+            };
+          }, false);
+        } catch (err) {
+          console.error(`Failed to ${actionName}:`, err);
         }
-
-        mutate((currentData: any) => {
-          if (!currentData) return currentData;
-          return {
-            ...currentData,
-            pending: currentData.pending.filter((p: any) => p.id !== id)
-          };
-        }, false);
-      } catch (err) {
-        console.error(`Failed to ${actionName}:`, err);
       }
-    }
+    });
   };
 
   const handleDeleteHistory = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this debate?")) {
-      try {
-        console.log(`DEBUG: Attempting to delete debate ${id}`);
-        const result = await deleteDebate(id);
-        console.log(`DEBUG: Delete result:`, result);
 
-        if (result.success) {
-          mutate((currentData: any) => {
-            if (!currentData) return currentData;
-            return {
-              ...currentData,
-              histories: currentData.histories.filter((h: any) => h.id !== id),
-              scheduled: currentData.scheduled.filter((s: any) => s.id !== id)
-            }
-          }, false);
-        } else {
-          alert(`Failed to delete: ${result.error || 'Unknown error'}`);
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Debate",
+      message: "Are you sure you want to delete this debate from your history?",
+      confirmText: "Delete",
+      action: async () => {
+        try {
+          console.log(`DEBUG: Attempting to delete debate ${id}`);
+          const result = await deleteDebate(id);
+          console.log(`DEBUG: Delete result:`, result);
+
+          if (result.success) {
+            mutate((currentData: any) => {
+              if (!currentData) return currentData;
+              return {
+                ...currentData,
+                histories: currentData.histories.filter((h: any) => h.id !== id),
+                scheduled: currentData.scheduled.filter((s: any) => s.id !== id)
+              }
+            }, false);
+          } else {
+            alert(`Failed to delete: ${result.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          console.error("Failed to delete debate:", err);
+          alert("An unexpected error occurred while deleting the debate.");
         }
-      } catch (err) {
-        console.error("Failed to delete debate:", err);
-        alert("An unexpected error occurred while deleting the debate.");
       }
-    }
+    });
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f6f6f8]">
-      <Sidebar />
+    <div className="flex flex-1 min-w-0 h-full overflow-hidden bg-[#f6f6f8]">
+
 
       <main className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
         <div className="px-8 pt-16 lg:pt-24 pb-10 max-w-6xl mx-auto w-full">
@@ -381,7 +450,9 @@ function DebatesContent() {
                                 className="object-cover group-hover:scale-110 transition-transform duration-500"
                                 referrerPolicy="no-referrer"
                               />
-                              <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${item.outcome === 'Won' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                              <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${item.outcome === 'Won' ? 'bg-emerald-500 text-white' :
+                                item.outcome === 'Tie' ? 'bg-amber-500 text-white' :
+                                  'bg-rose-500 text-white'
                                 }`}>
                                 {item.outcome}
                               </div>
@@ -428,7 +499,7 @@ function DebatesContent() {
                     className="space-y-4"
                   >
                     {scheduled.length > 0 ? scheduled.map((item) => (
-                      <div key={item.id} className={`bg-white rounded-3xl p-6 border shadow-sm flex items-center justify-between ${item.isOverdue ? 'border-amber-100 opacity-80' : 'border-slate-100'}`}>
+                      <div key={item.id} onClick={() => setSelectedDebate(item)} className={`bg-white rounded-3xl p-6 border shadow-sm flex items-center justify-between cursor-pointer hover:shadow-md transition-all ${item.isOverdue ? 'border-amber-100 opacity-80 hover:border-amber-300' : 'border-slate-100 hover:border-[#585bf3]/30'}`}>
                         <div className="flex items-center gap-6">
                           <div className={`size-16 rounded-2xl flex items-center justify-center ${item.isOverdue ? 'bg-amber-50 text-amber-500' : 'bg-slate-50 text-[#585bf3]'}`}>
                             <Calendar className="w-8 h-8" />
@@ -465,7 +536,7 @@ function DebatesContent() {
                           />
                           {item.isOverdue ? (
                             <button
-                              onClick={() => handleDeleteHistory({ preventDefault: () => { }, stopPropagation: () => { } } as any, item.id)}
+                              onClick={(e) => handleDeleteHistory(e, item.id)}
                               className="size-11 bg-rose-500 text-white rounded-xl flex items-center justify-center hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20"
                               title="Delete Overdue Debate"
                             >
@@ -474,6 +545,7 @@ function DebatesContent() {
                           ) : (
                             <Link
                               href={`/arena?id=${item.id}&mode=${item.mode || 'ai'}`}
+                              onClick={(e) => e.stopPropagation()}
                               className="px-6 py-2.5 bg-[#585bf3] text-white rounded-xl text-sm font-bold hover:bg-[#585bf3]/90 transition-all shadow-lg shadow-[#585bf3]/20"
                             >
                               Enter
@@ -503,7 +575,7 @@ function DebatesContent() {
                     className="space-y-4"
                   >
                     {pending.length > 0 ? pending.map((item) => (
-                      <div key={item.id} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+                      <div key={item.id} onClick={() => setSelectedDebate(item)} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between cursor-pointer hover:shadow-md hover:border-[#585bf3]/30 transition-all">
                         <div className="flex items-center gap-6">
                           <div className={`size-16 rounded-2xl flex items-center justify-center ${item.type === 'sent' ? 'bg-blue-50 text-blue-500' : 'bg-amber-50 text-amber-500'}`}>
                             {item.type === 'sent' ? <ArrowRight className="w-8 h-8" /> : <MessageSquare className="w-8 h-8" />}
@@ -526,13 +598,13 @@ function DebatesContent() {
                           {item.type === 'received' ? (
                             <>
                               <button
-                                onClick={() => handleAccept(item.id)}
+                                onClick={(e) => handleAccept(e, item.id)}
                                 className="size-11 bg-emerald-500 text-white rounded-xl flex items-center justify-center hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
                               >
                                 <Check className="w-5 h-5" />
                               </button>
                               <button
-                                onClick={() => handleDecline(item.id)}
+                                onClick={(e) => handleDecline(e, item.id)}
                                 className="size-11 bg-rose-500 text-white rounded-xl flex items-center justify-center hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20"
                               >
                                 <X className="w-5 h-5" />
@@ -540,7 +612,7 @@ function DebatesContent() {
                             </>
                           ) : (
                             <button
-                              onClick={() => handleDecline(item.id, true)}
+                              onClick={(e) => handleDecline(e, item.id, true)}
                               className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all"
                             >
                               Cancel Request
@@ -562,6 +634,132 @@ function DebatesContent() {
           </div>
         </div>
       </main >
+
+      {/* Confirm Modal */}
+      <AnimatePresence>
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+              onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white rounded-3xl shadow-xl w-full max-w-sm overflow-hidden z-10 border border-slate-100"
+            >
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+                <p className="text-slate-500 mb-6 font-medium">{confirmModal.message}</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                  >
+                    {confirmModal.title === "Cancel Request" ? "No" : "Cancel"}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await confirmModal.action();
+                      setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                    }}
+                    className={`flex-1 px-4 py-2.5 text-white font-bold rounded-xl transition-colors ${confirmModal.confirmText.includes('Delete') || confirmModal.confirmText.toLowerCase().includes('cancel') || confirmModal.confirmText.includes('Decline') || confirmModal.title === "Cancel Request"
+                      ? 'bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/20'
+                      : 'bg-[#585bf3] hover:bg-[#585bf3]/90 shadow-lg shadow-[#585bf3]/20'
+                      }`}
+                  >
+                    {confirmModal.confirmText}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Details Modal */}
+      <AnimatePresence>
+        {selectedDebate && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+              onClick={() => setSelectedDebate(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden z-10 border border-slate-100"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-6">
+                  <h3 className="text-xl font-black text-slate-900 leading-tight">Debate Details</h3>
+                  <button onClick={() => setSelectedDebate(null)} className="p-2 -mr-2 bg-slate-50 hover:bg-slate-100 text-slate-400 rounded-full transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/50">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Topic</p>
+                    <p className="font-medium text-slate-900 leading-snug">{selectedDebate.title}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/50">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Date</p>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                        <Calendar className="w-4 h-4 text-[#585bf3]" />
+                        {selectedDebate.date}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/50">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Time</p>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                        <Clock className="w-4 h-4 text-[#585bf3]" />
+                        {selectedDebate.time}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/50">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Duration</p>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                        <History className="w-4 h-4 text-slate-400" />
+                        {selectedDebate.timeLimit} Minutes
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/50">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Opponent</p>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                        <Image src={selectedDebate.avatar} alt={selectedDebate.opponent || 'Avatar'} width={24} height={24} className="rounded-full border border-slate-200" />
+                        <span className="truncate">{selectedDebate.opponent}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <button
+                    onClick={() => setSelectedDebate(null)}
+                    className="w-full py-3 bg-[#585bf3] hover:bg-[#585bf3]/90 shadow-lg shadow-[#585bf3]/20 text-white font-bold rounded-xl transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div >
   );
 }

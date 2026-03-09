@@ -15,16 +15,16 @@ import {
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
-import Sidebar from '@/components/Sidebar';
+
 
 export default function ModeSelection() {
   const [selectedMode, setSelectedMode] = useState<'multi' | 'ai' | null>(null);
   const [topic, setTopic] = useState('');
 
   return (
-    <div className="bg-[#f6f6f8] min-h-screen font-sans text-slate-900 flex">
-      <Sidebar />
-      <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden">
+    <div className="bg-[#f6f6f8] h-full flex-1 min-w-0 font-sans text-slate-900 flex">
+
+      <div className="relative flex h-full w-full flex-col overflow-x-hidden">
         {/* Main Content */}
         <main className="flex-1 flex flex-col items-center pt-20 lg:pt-32 px-6 lg:px-12 pb-12 relative">
           {/* Background Decorative Elements */}
@@ -77,14 +77,7 @@ export default function ModeSelection() {
                   <p className="text-slate-500 mb-4 leading-relaxed">
                     Invite a peer for a real-time verbal duel. Battle for logic, wit, and superior points.
                   </p>
-                  <ul className="space-y-2">
-                    <li className="flex items-center gap-2 text-sm text-slate-600">
-                      <CheckCircle className="w-4 h-4 text-[#585bf3]" /> Real-time live scoring
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-slate-600">
-                      <CheckCircle className="w-4 h-4 text-[#585bf3]" /> Peer review system
-                    </li>
-                  </ul>
+
                 </div>
               </Link>
 
@@ -113,14 +106,7 @@ export default function ModeSelection() {
                   <p className="text-slate-500 mb-4 leading-relaxed">
                     Hone your skills against our advanced AI model designed to find logic gaps.
                   </p>
-                  <ul className="space-y-2">
-                    <li className="flex items-center gap-2 text-sm text-slate-600">
-                      <CheckCircle className="w-4 h-4 text-[#585bf3]" /> Instant AI feedback
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-slate-600">
-                      <CheckCircle className="w-4 h-4 text-[#585bf3]" /> Unlimited attempts
-                    </li>
-                  </ul>
+
                 </div>
               </Link>
             </div>

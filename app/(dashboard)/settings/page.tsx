@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import Sidebar from '@/components/Sidebar';
+
 import { createClient } from '@/lib/supabase/client';
 import { updateProfile } from '@/app/actions/user';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -133,8 +133,8 @@ export default function SettingsPage() {
     };
 
     return (
-        <div className="flex h-screen overflow-hidden bg-[#f6f6f8]">
-            <Sidebar />
+        <div className="flex flex-1 min-w-0 h-full overflow-hidden bg-[#f6f6f8]">
+
 
             <main className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
                 <div className="px-8 pt-16 lg:pt-24 pb-10 max-w-4xl mx-auto w-full">

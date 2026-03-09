@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   CheckCircle,
   ArrowRight,
   MessageSquare,
@@ -12,32 +12,32 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import Sidebar from '@/components/Sidebar';
+
 import { motion } from 'framer-motion';
 
 import { useRouter } from 'next/navigation';
 
 const models = [
-  { 
-    id: 'gemini', 
-    name: 'Gemini 2.5 Flash', 
-    provider: 'Google', 
+  {
+    id: 'gemini',
+    name: 'Gemini 2.5 Flash',
+    provider: 'Google',
     description: 'Fast, multimodal, and highly creative reasoning.',
     color: 'from-blue-500 to-emerald-500',
     icon: 'https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg'
   },
-  { 
-    id: 'openai', 
-    name: 'GPT-4o', 
-    provider: 'OpenAI', 
+  {
+    id: 'openai',
+    name: 'GPT-4o',
+    provider: 'OpenAI',
     description: 'The industry standard for logical consistency and nuance.',
     color: 'from-slate-700 to-slate-900',
     icon: 'https://upload.wikimedia.org/wikipedia/commons/0/04/ChatGPT_logo.svg'
   },
-  { 
-    id: 'anthropic', 
-    name: 'Claude 3.5 Sonnet', 
-    provider: 'Anthropic', 
+  {
+    id: 'anthropic',
+    name: 'Claude 3.5 Sonnet',
+    provider: 'Anthropic',
     description: 'Exceptional at nuanced writing and ethical reasoning.',
     color: 'from-orange-400 to-rose-600',
     icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/1200px-Anthropic_logo.svg.png'
@@ -51,8 +51,8 @@ export default function PracticeSoloPage() {
   const [timeLimit, setTimeLimit] = useState('10');
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f6f6f8]">
-      <Sidebar />
+    <div className="flex flex-1 min-w-0 h-full overflow-hidden bg-[#f6f6f8]">
+
 
       <main className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
         <div className="px-8 py-12 max-w-4xl mx-auto w-full">
@@ -75,9 +75,9 @@ export default function PracticeSoloPage() {
                 1. What are we debating?
               </h2>
               <div className="relative">
-                <input 
-                  type="text" 
-                  placeholder="e.g., The ethics of genetic engineering" 
+                <input
+                  type="text"
+                  placeholder="e.g., The ethics of genetic engineering"
                   className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none text-lg font-medium"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
@@ -98,16 +98,15 @@ export default function PracticeSoloPage() {
                   <button
                     key={model.id}
                     onClick={() => setSelectedModel(model.id)}
-                    className={`flex items-center gap-6 p-6 rounded-3xl border-2 transition-all text-left relative overflow-hidden group ${
-                      selectedModel === model.id 
-                        ? 'border-[#585bf3] bg-[#585bf3]/5 ring-4 ring-[#585bf3]/5' 
-                        : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
-                    }`}
+                    className={`flex items-center gap-6 p-6 rounded-3xl border-2 transition-all text-left relative overflow-hidden group ${selectedModel === model.id
+                      ? 'border-[#585bf3] bg-[#585bf3]/5 ring-4 ring-[#585bf3]/5'
+                      : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                      }`}
                   >
                     <div className={`size-16 rounded-2xl bg-gradient-to-br ${model.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
                       <Sparkles className="w-8 h-8" />
                     </div>
-                    
+
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-black text-[#585bf3] uppercase tracking-widest">{model.provider}</span>
@@ -120,9 +119,8 @@ export default function PracticeSoloPage() {
                     </div>
 
                     <div className="shrink-0">
-                      <div className={`size-6 rounded-full border-2 flex items-center justify-center transition-all ${
-                        selectedModel === model.id ? 'bg-[#585bf3] border-[#585bf3]' : 'border-slate-200'
-                      }`}>
+                      <div className={`size-6 rounded-full border-2 flex items-center justify-center transition-all ${selectedModel === model.id ? 'bg-[#585bf3] border-[#585bf3]' : 'border-slate-200'
+                        }`}>
                         {selectedModel === model.id && <CheckCircle className="w-4 h-4 text-white" />}
                       </div>
                     </div>
@@ -142,11 +140,10 @@ export default function PracticeSoloPage() {
                   <button
                     key={limit}
                     onClick={() => setTimeLimit(limit)}
-                    className={`py-4 rounded-2xl border-2 font-bold transition-all ${
-                      timeLimit === limit 
-                        ? 'border-[#585bf3] bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20' 
-                        : 'border-slate-100 text-slate-500 hover:border-slate-200 hover:bg-slate-50'
-                    }`}
+                    className={`py-4 rounded-2xl border-2 font-bold transition-all ${timeLimit === limit
+                      ? 'border-[#585bf3] bg-[#585bf3] text-white shadow-lg shadow-[#585bf3]/20'
+                      : 'border-slate-100 text-slate-500 hover:border-slate-200 hover:bg-slate-50'
+                      }`}
                   >
                     {limit} Min
                   </button>
@@ -156,7 +153,7 @@ export default function PracticeSoloPage() {
 
             {/* Action */}
             <div className="flex justify-center pt-4">
-              <button 
+              <button
                 onClick={() => {
                   if (!topic || !selectedModel) return;
                   router.push(`/arena?mode=ai&topic=${encodeURIComponent(topic)}&model=${selectedModel}&timeLimit=${timeLimit}`);
