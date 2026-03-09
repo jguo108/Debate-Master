@@ -62,7 +62,7 @@ export default function ModeSelection() {
                   <Image
                     alt="Challenge Friend"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    src="https://picsum.photos/seed/debate-multi/800/450"
+                    src="/1.jpg"
                     width={800}
                     height={450}
                     referrerPolicy="no-referrer"
@@ -91,7 +91,7 @@ export default function ModeSelection() {
                   <Image
                     alt="Practice Solo"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    src="https://picsum.photos/seed/debate-ai/800/450"
+                    src="/2.png"
                     width={800}
                     height={450}
                     referrerPolicy="no-referrer"

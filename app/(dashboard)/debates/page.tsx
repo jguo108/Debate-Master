@@ -167,7 +167,7 @@ function DebatesContent() {
           outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
           date: new Date(d.created_at).toLocaleDateString(),
           opponent: opp.name,
-          image: `https://picsum.photos/seed/${d.id}/600/400`,
+          image: d.mode === 'ai' ? '/2.png' : '/1.jpg',
           score: "N/A"
         };
       });
