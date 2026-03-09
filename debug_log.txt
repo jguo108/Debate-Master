@@ -1,0 +1,2 @@
+
+[2026-03-09T07:32:58.723Z] forfeitDebate -> ID: db21a489-575e-4c37-8de6-47a3fef8b9b2, OPPONENT_ID: null, UPDATE_DATA: [{"id":"db21a489-575e-4c37-8de6-47a3fef8b9b2","topic":"Ai and Homework","status":"concluded","time_limit":5,"mode":"ai","winner_id":null,"created_at":"2026-03-09T07:31:55.886706+00:00","scheduled_at":null,"pro_user_id":"4ed2fcd3-830b-4a49-b044-a44b1dcb46ce","con_user_id":null,"evaluation_reason":"User forfeited the debate by exiting the arena.","pro_deleted":false,"con_deleted":false,"model":"gemini"}], ERROR: null
