@@ -581,10 +581,10 @@ function ArenaContent() {
 
   const handleExit = (targetHref?: string) => {
     if (isFinished || isWaitingToStart) {
-      router.push(targetHref || '/debates');
+      router.push(targetHref || '/debates?tab=history');
       return true;
     }
-    setPendingHref(targetHref || '/debates');
+    setPendingHref(targetHref || '/debates?tab=history');
     setShowExitModal(true);
     return false;
   };
@@ -598,7 +598,7 @@ function ArenaContent() {
         console.error("Failed to forfeit debate:", err);
       }
     }
-    router.push(pendingHref || '/debates');
+    router.push(pendingHref || '/debates?tab=history');
     // We intentionally DO NOT set showExitModal to false here
     // so the modal overlay stays visible while Next.js transitions,
     // thereby hiding the chat window underneath.
@@ -877,7 +877,7 @@ function ArenaContent() {
 
                       <div className="pt-4">
                         <Link
-                          href="/debates"
+                          href="/debates?tab=history"
                           className="block w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20"
                         >
                           Return to Debates
