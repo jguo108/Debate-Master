@@ -166,12 +166,12 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        {/* Left Column: Avatar Preview */}
-                        <div className="space-y-6">
-                            <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm flex flex-col items-center text-center">
+                    <div className="max-w-2xl mx-auto w-full">
+                        <div className="bg-white rounded-[40px] p-10 lg:p-12 border border-slate-100 shadow-sm space-y-10">
+                            {/* Avatar Section */}
+                            <div className="flex flex-col items-center text-center">
                                 <div className="relative group mb-6">
-                                    <div className="size-32 rounded-full overflow-hidden border-4 border-[#585bf3]/10 relative shadow-inner">
+                                    <div className="size-36 rounded-full overflow-hidden border-4 border-[#585bf3]/10 relative shadow-inner">
                                         <Image
                                             src={avatarUrl || 'https://picsum.photos/seed/alex/100/100'}
                                             alt="Avatar Preview"
@@ -182,12 +182,12 @@ export default function SettingsPage() {
                                     <button
                                         onClick={handleCameraClick}
                                         disabled={uploading}
-                                        className="absolute -bottom-2 -right-2 size-10 bg-[#585bf3] rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
+                                        className="absolute -bottom-2 -right-2 size-11 bg-[#585bf3] rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
                                     >
                                         {uploading ? (
                                             <Loader2 className="w-5 h-5 animate-spin" />
                                         ) : (
-                                            <Camera className="w-5 h-5" />
+                                            <Camera className="w-6 h-6" />
                                         )}
                                     </button>
                                     <input
@@ -198,86 +198,81 @@ export default function SettingsPage() {
                                         className="hidden"
                                     />
                                 </div>
-                                <h3 className="text-xl font-bold text-slate-900">{fullName || 'Your Name'}</h3>
+                                <h3 className="text-2xl font-black text-slate-900">{fullName || 'Your Name'}</h3>
+                                <p className="text-slate-400 text-sm mt-1">Update your profile picture and details</p>
                             </div>
 
-                        </div>
-
-                        {/* Right Column: Edit Form */}
-                        <div className="md:col-span-2 space-y-6">
-                            <div className="bg-white rounded-[32px] p-10 border border-slate-100 shadow-sm space-y-8">
-                                {/* Form Sections */}
-                                <div className="space-y-8">
-                                    <div className="space-y-4">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                            Display Name
-                                        </label>
-                                        <div className="relative">
-                                            <User className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                            <input
-                                                type="text"
-                                                value={fullName}
-                                                onChange={(e) => setFullName(e.target.value)}
-                                                placeholder="Enter your name"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-14 pr-6 text-sm focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none"
-                                            />
-                                        </div>
-                                    </div>
-
-
-                                    <div className="space-y-4">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                            Or Choose a Preset
-                                        </label>
-                                        <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
-                                            {PRESET_AVATARS.map((url, i) => (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => setAvatarUrl(url)}
-                                                    className={`size-14 rounded-2xl overflow-hidden border-2 transition-all shrink-0 ${avatarUrl === url ? 'border-[#585bf3] scale-110 shadow-lg' : 'border-slate-100 hover:border-slate-300'
-                                                        }`}
-                                                >
-                                                    <Image src={url} alt={`Preset ${i}`} width={56} height={56} className="object-cover h-full w-full" />
-                                                </button>
-                                            ))}
-                                        </div>
+                            {/* Form Sections */}
+                            <div className="space-y-10">
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                        Display Name
+                                    </label>
+                                    <div className="relative">
+                                        <User className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            value={fullName}
+                                            onChange={(e) => setFullName(e.target.value)}
+                                            placeholder="Enter your name"
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-14 pr-6 text-sm focus:ring-2 focus:ring-[#585bf3]/20 focus:border-[#585bf3] transition-all outline-none font-medium"
+                                        />
                                     </div>
                                 </div>
 
-                                <div className="pt-4 flex items-center justify-between">
-                                    <AnimatePresence>
-                                        {message && (
-                                            <motion.div
-                                                initial={{ opacity: 0, x: -10 }}
-                                                animate={{ opacity: 1, x: 0 }}
-                                                exit={{ opacity: 0, x: -10 }}
-                                                className={`flex items-center gap-2 text-sm font-bold ${message.type === 'success' ? 'text-emerald-500' : 'text-rose-500'
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                        Or Choose a Preset
+                                    </label>
+                                    <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+                                        {PRESET_AVATARS.map((url, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => setAvatarUrl(url)}
+                                                className={`size-16 rounded-2xl overflow-hidden border-2 transition-all shrink-0 ${avatarUrl === url ? 'border-[#585bf3] scale-105 shadow-md' : 'border-slate-50 hover:border-slate-200'
                                                     }`}
                                             >
-                                                {message.type === 'success' && <CheckCircle2 className="w-4 h-4" />}
-                                                {message.text}
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    <button
-                                        onClick={handleSave}
-                                        disabled={saving || loading}
-                                        className="ml-auto bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {saving ? (
-                                            <>
-                                                <Loader2 className="w-5 h-5 animate-spin" />
-                                                <span>Saving...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Save className="w-5 h-5" />
-                                                <span>Save Changes</span>
-                                            </>
-                                        )}
-                                    </button>
+                                                <Image src={url} alt={`Preset ${i}`} width={64} height={64} className="object-cover h-full w-full" />
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
+                            </div>
+
+                            {/* Action Section */}
+                            <div className="flex flex-col items-center gap-6 pt-4">
+                                <AnimatePresence>
+                                    {message && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 10 }}
+                                            className={`flex items-center gap-2 text-sm font-bold ${message.type === 'success' ? 'text-emerald-500' : 'text-rose-500'
+                                                }`}
+                                        >
+                                            {message.type === 'success' && <CheckCircle2 className="w-4 h-4" />}
+                                            {message.text}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving || loading}
+                                    className="w-full sm:w-auto min-w-[200px] bg-slate-900 text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                >
+                                    {saving ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            <span>Saving Changes...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="w-5 h-5 group-hover:animate-pulse" />
+                                            <span>Save Changes</span>
+                                        </>
+                                    )}
+                                </button>
                             </div>
                         </div>
                     </div>
