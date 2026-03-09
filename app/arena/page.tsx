@@ -63,6 +63,7 @@ function ArenaContent() {
   const [debateId, setDebateId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [channelInstance, setChannelInstance] = useState<any>(null);
+  const [isSending, setIsSending] = useState(false);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
@@ -327,7 +328,6 @@ function ArenaContent() {
     const channel = supabase
       .channel(channelName, {
         config: {
-          broadcast: { ack: true },
           presence: { key: userProfile?.id || '' }
         },
       })
@@ -337,10 +337,35 @@ function ArenaContent() {
         table: 'messages',
         filter: `debate_id=eq.${debateId}`
       }, (payload) => {
+        const newMsg = payload.new as any;
         setMessages(prev => {
-          // Prevent duplicates from multiple event streams
-          if (prev.some(m => m.id === payload.new.id)) return prev;
-          return [...prev, payload.new];
+          // If this exact message ID already exists (real message), skip
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+
+          // Replace any temp message from the same user with matching content
+          const hasTempMatch = prev.some(
+            m => String(m.id).startsWith('temp-') &&
+              m.content === newMsg.content &&
+              m.role === newMsg.role
+          );
+
+          if (hasTempMatch) {
+            // Replace the first matching temp message with the real one
+            let replaced = false;
+            return prev.map(m => {
+              if (!replaced &&
+                String(m.id).startsWith('temp-') &&
+                m.content === newMsg.content &&
+                m.role === newMsg.role) {
+                replaced = true;
+                return newMsg;
+              }
+              return m;
+            });
+          }
+
+          // No temp match found — this is a message from the opponent, just append
+          return [...prev, newMsg];
         });
       })
       .on('postgres_changes', {
@@ -368,22 +393,6 @@ function ArenaContent() {
           });
         }
         setOnlineUsers(userIds);
-      })
-      .on('broadcast', { event: 'new_message' }, () => {
-        // Fallback: If broadcast tells us there's a new message, cleanly fetch latest
-        supabase
-          .from('messages')
-          .select('*')
-          .eq('debate_id', debateId)
-          .order('created_at', { ascending: true })
-          .then(({ data: latest }) => {
-            if (latest) {
-              setMessages(prev => {
-                const tempMessages = prev.filter(m => m.id && String(m.id).startsWith('temp-'));
-                return [...latest, ...tempMessages];
-              });
-            }
-          });
       });
 
     channel.subscribe(async (status) => {
@@ -392,23 +401,6 @@ function ArenaContent() {
         if (userProfile?.id) {
           await channel.track({ user_id: userProfile.id });
         }
-
-        // Fetch missing messages just in case any were sent during the connection phase!
-        supabase
-          .from('messages')
-          .select('*')
-          .eq('debate_id', debateId)
-          .order('created_at', { ascending: true })
-          .then(({ data: latest }) => {
-            if (latest) {
-              setMessages(prev => {
-                const tempMessages = prev.filter(m => m.id && String(m.id).startsWith('temp-'));
-                // Ensure we don't duplicate messages that already arrived in latest but we still had temp array
-                // Replacing cleanly works fine but we want to retain unresolved temp messages.
-                return [...latest, ...tempMessages];
-              });
-            }
-          });
       }
     });
 
@@ -456,29 +448,16 @@ function ArenaContent() {
   };
 
   const handleSend = async () => {
-    console.log("DEBUG: handleSend attempt. State:", {
-      input: !!input.trim(),
-      debateId,
-      userProfile: !!userProfile,
-      userName: userProfile?.full_name || userProfile?.username || 'Unknown'
-    });
-
-    if (!input.trim()) return;
-    if (!debateId) {
-      console.error("DEBUG: handleSend failed - debateId is null");
-      return;
-    }
-    if (!userProfile) {
-      console.error("DEBUG: handleSend failed - userProfile is null");
-      return;
-    }
+    if (!input.trim() || isSending) return;
+    if (!debateId || !userProfile) return;
 
     const content = input;
     setInput('');
+    setIsSending(true);
 
     const authorName = userProfile.full_name || userProfile.username || 'User';
 
-    // Optimistic Update
+    // Optimistic Update — temp message shown instantly to sender
     const tempId = `temp-${Date.now()}`;
     setMessages(prev => [...prev, {
       id: tempId,
@@ -491,39 +470,25 @@ function ArenaContent() {
     }]);
 
     try {
-      console.log("DEBUG: Calling saveMessage...", { debateId, role: currentUserRole, authorName });
-
       const result = await saveMessage(debateId, content, currentUserRole, authorName);
 
       if (result.success) {
-        console.log("DEBUG: saveMessage success return");
-        // Manually trigger a refresh to be safe
-        const { data: latest } = await supabase.from('messages').select('*').eq('debate_id', debateId).order('created_at', { ascending: true });
-        if (latest) {
-          setMessages(prev => {
-            const tempMessages = prev.filter(m => m.id && String(m.id).startsWith('temp-') && m.id !== tempId);
-            return [...latest, ...tempMessages];
-          });
-        }
+        // postgres_changes will fire and replace the temp message with the real one.
+        // No manual re-fetch or broadcast needed.
 
         // Trigger AI response immediately if in AI mode
         if (activeMode === 'ai') {
           await handleAIResponse(content);
-        } else if (channelInstance) {
-          // Broadcast to opponent so they catch up instantly
-          channelInstance.send({
-            type: 'broadcast',
-            event: 'new_message',
-            payload: { success: true }
-          }).catch(console.error);
         }
       } else {
-        console.error("DEBUG: saveMessage returned success:false", result);
+        // Save failed — remove the optimistic message
         setMessages(prev => prev.filter(m => m.id !== tempId));
       }
     } catch (err) {
-      console.error("DEBUG: handleSend exception:", err);
+      console.error("handleSend error:", err);
       setMessages(prev => prev.filter(m => m.id !== tempId));
+    } finally {
+      setIsSending(false);
     }
   };
 
