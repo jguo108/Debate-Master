@@ -96,18 +96,16 @@ function ArenaContent() {
 
   const selectedOpponent = React.useMemo(() => {
     if (activeMode === 'ai') {
-      return { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', rank: 'AI Model', avatar: 'https://picsum.photos/seed/ai-bot/100/100' };
+      return { name: models[modelId as keyof typeof models]?.name || 'AI Assistant', avatar: 'https://picsum.photos/seed/ai-bot/100/100' };
     }
 
     // Determine opponent based on who the current user IS NOT
     if (userProfile && proParticipant.id && userProfile.id === proParticipant.id) {
-      return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/opponent/100/100' };
-    } else if (userProfile && conParticipant.id && userProfile.id === conParticipant.id) {
-      return proParticipant.name !== 'Loading...' ? proParticipant : { name: 'Opponent', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+      return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', avatar: 'https://picsum.photos/seed/opponent/100/100' };
     }
 
     // Fallback/Loading
-    return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', rank: 'Logic Master', avatar: 'https://picsum.photos/seed/opponent/100/100' };
+    return conParticipant.name !== 'Loading...' ? conParticipant : { name: 'Opponent', avatar: 'https://picsum.photos/seed/opponent/100/100' };
   }, [activeMode, modelId, conParticipant, proParticipant, userProfile]);
 
   // -- Initialization --

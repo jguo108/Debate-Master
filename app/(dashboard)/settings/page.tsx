@@ -199,18 +199,8 @@ export default function SettingsPage() {
                                     />
                                 </div>
                                 <h3 className="text-xl font-bold text-slate-900">{fullName || 'Your Name'}</h3>
-                                <p className="text-xs font-bold text-[#585bf3] uppercase tracking-widest mt-1">
-                                    {profile?.rank || 'Novice Debater'}
-                                </p>
                             </div>
 
-                            <div className="bg-[#585bf3] rounded-[32px] p-8 text-white shadow-lg shadow-[#585bf3]/20 relative overflow-hidden">
-                                <Shield className="w-20 h-20 absolute -right-4 -bottom-4 opacity-10 rotate-12" />
-                                <h4 className="text-lg font-bold mb-2">Pro Member</h4>
-                                <p className="text-blue-100 text-sm leading-relaxed">
-                                    Your identity is your shield in the arena. Choose wisely.
-                                </p>
-                            </div>
                         </div>
 
                         {/* Right Column: Edit Form */}

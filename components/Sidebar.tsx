@@ -86,7 +86,6 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
         </div>
         <div className="flex flex-col">
           <h1 className="text-slate-900 text-base font-bold leading-none">Debate Master</h1>
-          <p className="text-[#585bf3] text-[10px] font-bold uppercase tracking-wider mt-1">Pro League</p>
         </div>
       </div>
 
@@ -111,9 +110,6 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
             <div className="flex flex-col min-w-0">
               <p className="text-sm font-bold truncate">
                 {profile?.full_name || 'Loading...'}
-              </p>
-              <p className="text-[10px] font-bold text-slate-500 uppercase">
-                {profile?.rank || 'Debater'}
               </p>
             </div>
           </div>

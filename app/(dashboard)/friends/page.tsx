@@ -47,7 +47,7 @@ const FriendCard = ({ id, name, personality, avatar, onChat, isOnline, unreadCou
               {isOnline ? 'Online' : 'Offline'}
             </span>
           </div>
-          <p className="text-xs text-slate-500">{personality}</p>
+          {personality && <p className="text-xs text-slate-500">{personality}</p>}
         </div>
       </div>
 
@@ -267,7 +267,7 @@ export default function FriendManager() {
       .from('friendships')
       .select(`
         status,
-        friend:friend_id(id, full_name, avatar_url, specialty, rank)
+        friend:friend_id(id, full_name, avatar_url, specialty)
       `)
       .eq('user_id', authUser.id)
       .eq('status', 'accepted');
@@ -276,7 +276,7 @@ export default function FriendManager() {
       .from('friendships')
       .select(`
         status,
-        requestor:user_id(id, full_name, avatar_url, specialty, rank)
+        requestor:user_id(id, full_name, avatar_url, specialty)
       `)
       .eq('friend_id', authUser.id)
       .eq('status', 'pending');
@@ -296,7 +296,7 @@ export default function FriendManager() {
     const friendsList = (friendshipRes.data || []).filter((f: any) => f.friend).map((f: any) => ({
       id: f.friend.id,
       name: f.friend.full_name || 'Anonymous',
-      personality: f.friend.specialty || 'General Expert',
+      personality: f.friend.specialty || '',
       avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
       isOnline: Math.random() > 0.5 // Simulated for now
     }));
@@ -304,7 +304,7 @@ export default function FriendManager() {
     const incomingList = (incomingRes.data || []).filter((f: any) => f.requestor).map((f: any) => ({
       id: f.requestor.id,
       name: f.requestor.full_name || 'Anonymous',
-      personality: f.requestor.specialty || 'General Expert',
+      personality: f.requestor.specialty || '',
       avatar: f.requestor.avatar_url || `https://picsum.photos/seed/${f.requestor.id}/200/200`,
       isOnline: Math.random() > 0.5
     }));
@@ -346,7 +346,7 @@ export default function FriendManager() {
         setPotentialFriends(profiles.map(p => ({
           id: p.id,
           name: p.full_name || 'Anonymous',
-          personality: p.specialty || 'General Expert',
+          personality: p.specialty || '',
           avatar: p.avatar_url || `https://picsum.photos/seed/${p.id}/200/200`,
           isOnline: Math.random() > 0.5
         })));
@@ -522,7 +522,7 @@ export default function FriendManager() {
                               <p className="font-bold text-sm text-slate-900">{pf.name}</p>
                               <span className={`size-1.5 rounded-full ${pf.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                             </div>
-                            <p className="text-[10px] text-slate-500">{pf.personality}</p>
+                            {pf.personality && <p className="text-[10px] text-slate-500">{pf.personality}</p>}
                           </div>
                         </div>
                         <button
@@ -609,7 +609,7 @@ export default function FriendManager() {
                   </div>
                   <input
                     className="block w-full pl-14 pr-4 py-4 bg-white border-none rounded-2xl shadow-sm focus:ring-2 focus:ring-[#585bf3]/50 text-slate-900 placeholder-slate-400 transition-all"
-                    placeholder="Search friends by name, rank, or debate specialty..."
+                    placeholder="Search friends by name or debate specialty..."
                     type="text"
                     value={mainSearchQuery}
                     onChange={(e) => setMainSearchQuery(e.target.value)}
@@ -632,7 +632,7 @@ export default function FriendManager() {
                           <Image src={req.avatar} alt={req.name} width={48} height={48} className="rounded-full bg-slate-100 object-cover size-12 shadow-sm" />
                           <div>
                             <p className="font-bold text-slate-900 leading-tight">{req.name}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{req.personality}</p>
+                            {req.personality && <p className="text-xs text-slate-500 mt-0.5">{req.personality}</p>}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-50">

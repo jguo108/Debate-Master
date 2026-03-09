@@ -45,7 +45,7 @@ function ChallengeFriendContent() {
       const { data: friendshipData } = await supabase
         .from('friendships')
         .select(`
-          friend:friend_id(id, full_name, avatar_url, specialty, rank)
+          friend:friend_id(id, full_name, avatar_url, specialty)
         `)
         .eq('user_id', authUser.id)
         .eq('status', 'accepted');
@@ -54,7 +54,6 @@ function ChallengeFriendContent() {
         setFriendsList(friendshipData.map((f: any) => ({
           id: f.friend.id,
           name: f.friend.full_name || 'Anonymous',
-          rank: f.friend.rank || 'Novice',
           avatar: f.friend.avatar_url || `https://picsum.photos/seed/${f.friend.id}/200/200`,
           status: 'Online' // Mocked online status
         })));
@@ -196,7 +195,6 @@ function ChallengeFriendContent() {
                         </div>
                         <div className="flex-1 overflow-hidden">
                           <p className="font-bold text-slate-900 truncate">{friend.name}</p>
-                          <p className="text-xs text-slate-500 font-medium">{friend.rank}</p>
                         </div>
                         {selectedFriend === friend.id && (
                           <CheckCircle className="w-5 h-5 text-[#585bf3] shrink-0" />

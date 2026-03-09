@@ -80,7 +80,7 @@ export default function LoginPage() {
               transition={{ delay: 0.2 }}
               className="text-lg text-white/80 leading-relaxed"
             >
-              Join the world&apos;s premier platform for high-stakes intellectual discourse. Refine your logic, challenge your peers, and rise through the ranks in our global arena.
+              Join the world&apos;s premier platform for high-stakes intellectual discourse. Refine your logic, challenge your peers, and excel in our global arena.
             </motion.p>
 
             <motion.div
@@ -139,7 +139,7 @@ export default function LoginPage() {
               {isLogin ? 'Welcome back' : 'Create Account'}
             </h2>
             <p className="mt-2 text-slate-500">
-              {isLogin ? 'Log in to your account to continue your climb.' : 'Every legend starts with a single argument.'}
+              {isLogin ? 'Log in to your account to continue your journey.' : 'Every legend starts with a single argument.'}
             </p>
           </motion.div>
 
