@@ -2,7 +2,6 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@/lib/supabase/server'
-import * as fs from 'fs';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -159,9 +158,11 @@ export async function forfeitDebate(debateId: string) {
         .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`)
         .select();
 
-    const logStr = `\n[${new Date().toISOString()}] forfeitDebate -> ID: ${debateId}, OPPONENT_ID: ${opponentId}, UPDATE_DATA: ${JSON.stringify(updateData)}, ERROR: ${JSON.stringify(error)}`;
-    console.log(logStr);
-    try { fs.appendFileSync('debug_log.txt', logStr); } catch (e) { }
+    // Security: Removed file system write - use proper logging service in production
+    if (process.env.NODE_ENV === 'development') {
+        const logStr = `\n[${new Date().toISOString()}] forfeitDebate -> ID: ${debateId}, OPPONENT_ID: ${opponentId}, UPDATE_DATA: ${JSON.stringify(updateData)}, ERROR: ${JSON.stringify(error)}`;
+        console.log(logStr);
+    }
 
     if (error) {
         console.error("DEBUG: Forfeit Debate Error:", error);

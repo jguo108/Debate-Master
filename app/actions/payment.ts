@@ -170,8 +170,11 @@ export async function cancelPayment(transactionId: string) {
 }
 
 export async function handlePaymentWebhook(payload: any) {
-  // For mock implementation, this simulates webhook processing
-  // In real implementation, this would verify webhook signature and process accordingly
+  // SECURITY: For mock implementation, this simulates webhook processing
+  // In real implementation, this MUST verify webhook signature to prevent unauthorized calls
+  // Example: Verify signature using payment provider's webhook secret
+  // const isValid = verifyWebhookSignature(payload, headers, process.env.PAYMENT_WEBHOOK_SECRET)
+  // if (!isValid) throw new Error('Invalid webhook signature')
   
   const supabase = await createClient()
   

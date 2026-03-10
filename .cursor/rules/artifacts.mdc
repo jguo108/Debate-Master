@@ -1,0 +1,8 @@
+---
+name: artifacts
+description: This is a new rule
+---
+
+# Overview
+
+When creating planning documents, scratchpads, or temporary test scripts, always place them in a directory named .cursor-scratch/. Do not place them in the root or source folders.
