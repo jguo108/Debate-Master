@@ -19,7 +19,7 @@ import { updateProfile } from '@/app/actions/user';
 import { getSubscriptionStatus } from '@/app/actions/subscription';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Crown } from 'lucide-react';
-import SubscriptionBadge from '@/components/SubscriptionBadge';
+import PaymentModal from '@/components/payment/PaymentModal';
 
 const supabase = createClient();
 
@@ -46,18 +46,25 @@ export default function SettingsPage() {
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [subscription, setSubscription] = useState<{ tier: 'free' | 'pro'; isActive: boolean; expiresAt: Date | null } | null>(null);
+    const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
 
     useEffect(() => {
         async function fetchProfile() {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-                const { data } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', user.id)
-                    .single();
+                // Fetch profile and subscription in parallel for better performance
+                const [profileResult, sub] = await Promise.all([
+                    supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', user.id)
+                        .single(),
+                    getSubscriptionStatus()
+                ]);
 
+                const { data } = profileResult;
                 if (data) {
                     setProfile(data);
                     setFullName(data.full_name || '');
@@ -68,9 +75,10 @@ export default function SettingsPage() {
                     setFullName(user.email?.split('@')[0] || '');
                 }
                 
-                // Fetch subscription status
-                const sub = await getSubscriptionStatus();
                 setSubscription(sub);
+                setSubscriptionLoading(false);
+            } else {
+                setSubscriptionLoading(false);
             }
             setLoading(false);
         }
@@ -197,11 +205,6 @@ export default function SettingsPage() {
                                             className="object-cover"
                                         />
                                     </div>
-                                    {subscription && (
-                                        <div className="absolute top-2 right-2">
-                                            <SubscriptionBadge tier={subscription.tier} isActive={subscription.isActive} size="md" position="top-right" />
-                                        </div>
-                                    )}
                                     <button
                                         onClick={handleCameraClick}
                                         disabled={uploading}
@@ -221,7 +224,20 @@ export default function SettingsPage() {
                                         className="hidden"
                                     />
                                 </div>
-                                <h3 className="text-2xl font-black text-slate-900">{fullName || 'Your Name'}</h3>
+                                <div className="flex items-center gap-2 justify-center">
+                                    <h3 className="text-2xl font-black text-slate-900">{fullName || 'Your Name'}</h3>
+                                    {subscriptionLoading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                    ) : subscription ? (
+                                        <span className={`text-[10px] font-medium px-2 py-1 rounded-md ${
+                                            subscription.tier === 'pro' && subscription.isActive 
+                                                ? 'bg-amber-50 text-amber-600/70' 
+                                                : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                            {subscription.tier === 'pro' && subscription.isActive ? 'Pro' : 'Free'}
+                                        </span>
+                                    ) : null}
+                                </div>
                                 <p className="text-slate-400 text-sm mt-1">Update your profile picture and details</p>
                             </div>
 
@@ -263,77 +279,87 @@ export default function SettingsPage() {
                             </div>
 
                             {/* Subscription Section */}
-                            {subscription && (
-                                <div className="space-y-4 pt-8 border-t border-slate-200">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                        Subscription
-                                    </label>
-                                    <div className="bg-gradient-to-br from-[#585bf3]/10 to-purple-500/10 rounded-2xl p-6 border border-[#585bf3]/20">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="flex items-center gap-3">
-                                                {subscription.tier === 'pro' ? (
-                                                    <Crown className="w-6 h-6 text-amber-500" />
-                                                ) : (
-                                                    <Shield className="w-6 h-6 text-slate-400" />
+                            <div className="space-y-4 pt-8 border-t border-slate-200">
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                    Subscription
+                                </label>
+                                <div className="bg-gradient-to-br from-[#585bf3]/10 to-purple-500/10 rounded-2xl p-6 border border-[#585bf3]/20">
+                                    {subscriptionLoading ? (
+                                        <div className="flex items-center justify-center py-8">
+                                            <Loader2 className="w-6 h-6 animate-spin text-[#585bf3]" />
+                                        </div>
+                                    ) : subscription ? (
+                                        <>
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-3">
+                                                    {subscription.tier === 'pro' ? (
+                                                        <Crown className="w-6 h-6 text-amber-500" />
+                                                    ) : (
+                                                        <Shield className="w-6 h-6 text-slate-400" />
+                                                    )}
+                                                    <div>
+                                                        <h3 className="font-bold text-slate-900">
+                                                            {subscription.tier === 'pro' ? 'Pro Subscription' : 'Free Plan'}
+                                                        </h3>
+                                                        <p className="text-xs text-slate-500">
+                                                            {subscription.tier === 'pro' 
+                                                                ? subscription.expiresAt 
+                                                                    ? `Expires ${new Date(subscription.expiresAt).toLocaleDateString()}`
+                                                                    : 'Active'
+                                                                : 'Upgrade to unlock all features'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {subscription.tier === 'free' && (
+                                                    <button
+                                                        onClick={() => setIsPaymentModalOpen(true)}
+                                                        className="px-4 py-2 bg-[#585bf3] text-white rounded-xl text-sm font-bold hover:bg-[#585bf3]/90 transition-colors"
+                                                    >
+                                                        Upgrade
+                                                    </button>
                                                 )}
-                                                <div>
-                                                    <h3 className="font-bold text-slate-900">
-                                                        {subscription.tier === 'pro' ? 'Pro Subscription' : 'Free Plan'}
-                                                    </h3>
-                                                    <p className="text-xs text-slate-500">
-                                                        {subscription.tier === 'pro' 
-                                                            ? subscription.expiresAt 
-                                                                ? `Expires ${new Date(subscription.expiresAt).toLocaleDateString()}`
-                                                                : 'Active'
-                                                            : 'Upgrade to unlock all features'}
-                                                    </p>
+                                            </div>
+                                            
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-slate-600">AI Debates</span>
+                                                    <span className="font-bold text-slate-900">
+                                                        {subscription.tier === 'pro' ? 'Unlimited' : '3/month'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-slate-600">Friend Challenges</span>
+                                                    <span className="font-bold text-slate-900">
+                                                        {subscription.tier === 'pro' ? 'Unlimited' : '1/month'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-slate-600">AI Models</span>
+                                                    <span className="font-bold text-slate-900">
+                                                        {subscription.tier === 'pro' ? 'All Models' : 'Gemini Only'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-slate-600">Time Limits</span>
+                                                    <span className="font-bold text-slate-900">
+                                                        {subscription.tier === 'pro' ? 'Up to 60 min' : 'Up to 10 min'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-slate-600">History</span>
+                                                    <span className="font-bold text-slate-900">
+                                                        {subscription.tier === 'pro' ? 'Unlimited' : 'Last 10 debates'}
+                                                    </span>
                                                 </div>
                                             </div>
-                                            {subscription.tier === 'free' && (
-                                                <button
-                                                    onClick={() => alert('Payment integration coming soon!')}
-                                                    className="px-4 py-2 bg-[#585bf3] text-white rounded-xl text-sm font-bold hover:bg-[#585bf3]/90 transition-colors"
-                                                >
-                                                    Upgrade
-                                                </button>
-                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="text-center py-8 text-slate-500 text-sm">
+                                            Unable to load subscription information
                                         </div>
-                                        
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-600">AI Debates</span>
-                                                <span className="font-bold text-slate-900">
-                                                    {subscription.tier === 'pro' ? 'Unlimited' : '3/month'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-600">Friend Challenges</span>
-                                                <span className="font-bold text-slate-900">
-                                                    {subscription.tier === 'pro' ? 'Unlimited' : '1/month'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-600">AI Models</span>
-                                                <span className="font-bold text-slate-900">
-                                                    {subscription.tier === 'pro' ? 'All Models' : 'Gemini Only'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-600">Time Limits</span>
-                                                <span className="font-bold text-slate-900">
-                                                    {subscription.tier === 'pro' ? 'Up to 60 min' : 'Up to 10 min'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-600">History</span>
-                                                <span className="font-bold text-slate-900">
-                                                    {subscription.tier === 'pro' ? 'Unlimited' : 'Last 10 debates'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
 
                             {/* Action Section */}
                             <div className="flex flex-col items-center gap-6 pt-4">
@@ -374,6 +400,19 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </main>
+
+            {/* Payment Modal */}
+            <PaymentModal
+                isOpen={isPaymentModalOpen}
+                onClose={() => setIsPaymentModalOpen(false)}
+                onPaymentComplete={async () => {
+                    // Refresh subscription status after payment
+                    setSubscriptionLoading(true);
+                    const sub = await getSubscriptionStatus();
+                    setSubscription(sub);
+                    setSubscriptionLoading(false);
+                }}
+            />
         </div>
     );
 }

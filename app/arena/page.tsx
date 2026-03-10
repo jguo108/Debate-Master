@@ -1095,7 +1095,18 @@ function ArenaContent() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-slate-900">{proParticipant.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-slate-900">{proParticipant.name}</p>
+                          {proParticipant.id && proParticipant.id !== 'ai' && proSubscription && (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${
+                              proSubscription.tier === 'pro' && proSubscription.isActive 
+                                ? 'bg-amber-50 text-amber-600/70' 
+                                : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {proSubscription.tier === 'pro' && proSubscription.isActive ? 'Pro' : 'Free'}
+                            </span>
+                          )}
+                        </div>
                         <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
                           {isHistoryView ? 'Archived' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'In Arena' : 'Away')}
                         </span>
@@ -1112,7 +1123,18 @@ function ArenaContent() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-slate-900">{isHistoryView ? historyOpponent.name : conParticipant.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-slate-900">{isHistoryView ? historyOpponent.name : conParticipant.name}</p>
+                          {conParticipant.id && conParticipant.id !== 'ai' && conSubscription && (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${
+                              conSubscription.tier === 'pro' && conSubscription.isActive 
+                                ? 'bg-amber-50 text-amber-600/70' 
+                                : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {conSubscription.tier === 'pro' && conSubscription.isActive ? 'Pro' : 'Free'}
+                            </span>
+                          )}
+                        </div>
                         <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
                           {isHistoryView ? 'Archived' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'In Arena' : 'Away')}
                         </span>

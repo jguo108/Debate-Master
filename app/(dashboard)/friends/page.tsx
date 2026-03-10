@@ -49,6 +49,15 @@ const FriendCard = ({ id, name, personality, avatar, onChat, isOnline, unreadCou
             <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-md ${isOnline ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
               {isOnline ? 'Online' : 'Offline'}
             </span>
+            {subscription && (
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${
+                subscription.tier === 'pro' && subscription.isActive 
+                  ? 'bg-amber-50 text-amber-600/70' 
+                  : 'bg-slate-100 text-slate-500'
+              }`}>
+                {subscription.tier === 'pro' && subscription.isActive ? 'Pro' : 'Free'}
+              </span>
+            )}
           </div>
           {personality && <p className="text-xs text-slate-500">{personality}</p>}
         </div>

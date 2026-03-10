@@ -14,7 +14,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import SubscriptionBadge from './SubscriptionBadge';
 import { getUserSubscriptionClient } from '@/lib/subscription/client';
 
 const SidebarLink = ({ icon: Icon, label, href, onClick }: { icon: any, label: string, href: string, onClick?: (e: React.MouseEvent) => void }) => {
@@ -80,8 +79,11 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
               table: 'profiles',
               filter: `id=eq.${user.id}`
             },
-            (payload) => {
+            async (payload) => {
               setProfile(payload.new);
+              // Refresh subscription status when profile changes
+              const updatedSub = await getUserSubscriptionClient(user.id);
+              setSubscription(updatedSub);
             }
           )
           .subscribe();
@@ -90,10 +92,22 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
 
     getProfile();
 
+    // Listen for subscription update events (e.g., after payment completion)
+    const handleSubscriptionUpdate = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const updatedSub = await getUserSubscriptionClient(user.id);
+        setSubscription(updatedSub);
+      }
+    };
+
+    window.addEventListener('subscription-updated', handleSubscriptionUpdate);
+
     return () => {
       if (channel) {
         supabase.removeChannel(channel);
       }
+      window.removeEventListener('subscription-updated', handleSubscriptionUpdate);
     };
   }, [supabase]);
 
@@ -143,12 +157,22 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
                 height={40}
                 referrerPolicy="no-referrer"
               />
-              {subscription && <SubscriptionBadge tier={subscription.tier} isActive={subscription.isActive} size="sm" />}
             </div>
             <div className="flex flex-col min-w-0">
-              <p className="text-sm font-bold truncate">
-                {profile?.full_name || 'Loading...'}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold truncate">
+                  {profile?.full_name || 'Loading...'}
+                </p>
+                {subscription && (
+                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md shrink-0 ${
+                    subscription.tier === 'pro' && subscription.isActive 
+                      ? 'bg-amber-50 text-amber-600/70' 
+                      : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {subscription.tier === 'pro' && subscription.isActive ? 'Pro' : 'Free'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <button
