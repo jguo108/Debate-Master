@@ -263,7 +263,7 @@ export default function PracticeSoloPage() {
                   
                   router.push(`/arena?mode=ai&topic=${encodeURIComponent(topic)}&model=${selectedModel}&timeLimit=${timeLimit}`);
                 }}
-                disabled={!topic || !selectedModel || (accessCheck && !accessCheck.allowed)}
+                disabled={!topic || !selectedModel || (accessCheck?.allowed === false)}
                 className="group flex items-center gap-3 bg-[#585bf3] hover:bg-[#585bf3]/90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black text-xl px-12 py-5 rounded-full shadow-xl shadow-[#585bf3]/20 transition-all active:scale-95"
               >
                 <Zap className="w-6 h-6 fill-current" />
