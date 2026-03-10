@@ -93,8 +93,8 @@ export async function evaluateDebate(debateId: string, topic: string, history: a
     The user (${userProfileName}) is on the PRO side. The opponent (${opponentName}) is on the CON side.
     Give a score based on how well they explained their ideas and if they were polite.
     Your response MUST be a valid JSON object with:
-    1. "winner": strictly "user" (if ${userProfileName} did a great job) or "opponent" (if ${opponentName} was more persuasive). 
-    2. "reasoning": 2-3 very encouraging sentences explaining what they did well and one small tip to improve. 
+    1. "winner": "user" (if ${userProfileName} was clearly better), "opponent" (if ${opponentName} was clearly better), or "tie" (if it was close or both did well). 
+    2. "reasoning": 2-3 very encouraging sentences explaining the decision.
     Use friendly words that a 10-year-old would feel proud to read!
     Do NOT use markdown code blocks.`
     })
@@ -117,6 +117,11 @@ export async function evaluateDebate(debateId: string, topic: string, history: a
             // Remove markdown code blocks if the model ignored the instruction
             const cleanJson = responseText.replace(/```json/i, '').replace(/```/g, '').trim();
             evaluation = JSON.parse(cleanJson);
+            
+            // Normalize winner to lowercase to ensure consistency
+            if (evaluation.winner) {
+                evaluation.winner = evaluation.winner.toLowerCase();
+            }
         } catch (e) {
             console.error("Failed to parse evaluation JSON:", responseText);
             return { winner: 'tie', reasoning: 'The judges could not reach a formatted verdict. The debate is a tie.' }
@@ -187,6 +192,9 @@ export async function concludeDebate(debateId: string, winnerRole: 'user' | 'opp
         if (debate) {
             winnerId = debate.pro_user_id === user.id ? debate.con_user_id : debate.pro_user_id;
         }
+    } else if (winnerRole === 'tie' || winnerRole === 'none') {
+        // Explicitly handle tie case - winnerId stays null
+        winnerId = null;
     }
 
     console.log(`DEBUG: Concluding debate ${debateId} via server action. WinnerRole: ${winnerRole}, Resolved WinnerId: ${winnerId}`);

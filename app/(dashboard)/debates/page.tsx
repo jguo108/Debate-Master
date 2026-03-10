@@ -174,10 +174,19 @@ function DebatesContent() {
       })
       .map(d => {
         const opp = mapOpponent(d);
+        // For concluded debates: winner_id === user.id means Won, null means Tie, otherwise Lost
+        let outcome: 'Won' | 'Tie' | 'Lost';
+        if (d.winner_id === user.id) {
+          outcome = 'Won';
+        } else if (d.winner_id === null) {
+          outcome = 'Tie';
+        } else {
+          outcome = 'Lost';
+        }
         return {
           id: d.id,
           title: d.topic,
-          outcome: d.winner_id === user.id ? 'Won' : (!d.winner_id && d.evaluation_reason?.toLowerCase().includes('tie') ? 'Tie' : 'Lost'),
+          outcome,
           date: new Date(d.created_at).toLocaleDateString(),
           opponent: opp.name,
           image: d.mode === 'ai' ? '/2.png' : '/1.jpg',

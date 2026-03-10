@@ -204,10 +204,9 @@ function ArenaContent() {
           } else if (debate.winner_id) {
             const winProfile = debate.winner_id === currentPro.id ? currentPro : currentCon;
             setWinner(winProfile.name || 'Opponent');
-          } else if (debate.evaluation_reason && debate.evaluation_reason.toLowerCase().includes('tie')) {
-            setWinner('Tie');
           } else {
-            setWinner('Concluded');
+            // For concluded debates, winner_id === null means it's a tie
+            setWinner('Tie');
           }
         }
 
@@ -650,8 +649,16 @@ function ArenaContent() {
       const debateTopic = historyTopic || 'Unknown Topic';
       const evaluation = await evaluateDebate(debateId as string, debateTopic, messages, userProfileName, selectedOpponent.name);
 
+      // Handle evaluation errors - default to tie
+      if (evaluation.error) {
+        setWinner('Tie');
+        setEvaluationReason('The evaluation could not be completed. The debate is considered a tie.');
+        await concludeDebate(debateId as string, 'tie', 'The evaluation could not be completed. The debate is considered a tie.');
+        return;
+      }
+
       let finalWinner = 'Tie';
-      let winnerId = 'none';
+      let winnerId: 'user' | 'opponent' | 'tie' = 'tie';
 
       if (evaluation.winner === 'user') {
         finalWinner = userProfileName;
@@ -659,6 +666,9 @@ function ArenaContent() {
       } else if (evaluation.winner === 'opponent') {
         finalWinner = selectedOpponent.name;
         winnerId = 'opponent';
+      } else if (evaluation.winner === 'tie') {
+        finalWinner = 'Tie';
+        winnerId = 'tie';
       }
 
       setWinner(finalWinner);
@@ -901,10 +911,17 @@ function ArenaContent() {
                       </div>
 
                       <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 flex flex-col gap-4">
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Winner</p>
-                          <p className="text-2xl font-black text-[#585bf3]">{winner}</p>
-                        </div>
+                        {winner === 'Tie' ? (
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Result</p>
+                            <p className="text-2xl font-black text-amber-600">It's a Tie!</p>
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Winner</p>
+                            <p className="text-2xl font-black text-[#585bf3]">{winner}</p>
+                          </div>
+                        )}
 
                         {evaluationReason && winner !== 'Calculating...' && (
                           <div className="pt-2 border-t border-slate-200">
@@ -1096,18 +1113,22 @@ function ArenaContent() {
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-slate-900">{proParticipant.name}</p>
-                          {proParticipant.id && proParticipant.id !== 'ai' && proSubscription && (
-                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${
+                          <p className="text-sm font-bold text-slate-900 leading-tight">{proParticipant.name}</p>
+                          {proParticipant.id && proParticipant.id !== 'ai' && proSubscription ? (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap min-w-[32px] h-[18px] flex items-center justify-center leading-none ${
                               proSubscription.tier === 'pro' && proSubscription.isActive 
                                 ? 'bg-amber-50 text-amber-600/70' 
                                 : 'bg-slate-100 text-slate-500'
                             }`}>
                               {proSubscription.tier === 'pro' && proSubscription.isActive ? 'Pro' : 'Free'}
                             </span>
+                          ) : (
+                            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap min-w-[32px] h-[18px] flex items-center justify-center leading-none opacity-0 pointer-events-none">
+                              Pro
+                            </span>
                           )}
                         </div>
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md whitespace-nowrap min-w-[60px] text-center ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
                           {isHistoryView ? 'Archived' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'In Arena' : 'Away')}
                         </span>
                       </div>
@@ -1124,18 +1145,22 @@ function ArenaContent() {
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-slate-900">{isHistoryView ? historyOpponent.name : conParticipant.name}</p>
-                          {conParticipant.id && conParticipant.id !== 'ai' && conSubscription && (
-                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${
+                          <p className="text-sm font-bold text-slate-900 leading-tight">{isHistoryView ? historyOpponent.name : conParticipant.name}</p>
+                          {conParticipant.id && conParticipant.id !== 'ai' && conSubscription ? (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap min-w-[32px] h-[18px] flex items-center justify-center leading-none ${
                               conSubscription.tier === 'pro' && conSubscription.isActive 
                                 ? 'bg-amber-50 text-amber-600/70' 
                                 : 'bg-slate-100 text-slate-500'
                             }`}>
                               {conSubscription.tier === 'pro' && conSubscription.isActive ? 'Pro' : 'Free'}
                             </span>
+                          ) : (
+                            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap min-w-[32px] h-[18px] flex items-center justify-center leading-none opacity-0 pointer-events-none">
+                              Pro
+                            </span>
                           )}
                         </div>
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md whitespace-nowrap min-w-[60px] text-center ${isHistoryView ? 'bg-slate-100 text-slate-400' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400')}`}>
                           {isHistoryView ? 'Archived' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'In Arena' : 'Away')}
                         </span>
                       </div>
