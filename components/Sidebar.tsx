@@ -22,7 +22,12 @@ const SidebarLink = ({ icon: Icon, label, href, onClick }: { icon: any, label: s
   // The Home button (href '/mode-selection') should also be active on debate setup pages
   const isHomeLink = href === '/mode-selection';
   const isDebateSetup = pathname?.startsWith('/debate/challenge') || pathname?.startsWith('/debate/practice');
-  const active = pathname === href || (isHomeLink && isDebateSetup);
+  
+  // The Debates button (href '/debates') should also be active on debate arena pages
+  const isDebatesLink = href === '/debates';
+  const isDebateArena = pathname?.startsWith('/arena');
+  
+  const active = pathname === href || (isHomeLink && isDebateSetup) || (isDebatesLink && isDebateArena);
 
   return (
     <Link
