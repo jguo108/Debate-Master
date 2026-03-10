@@ -14,6 +14,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import SubscriptionBadge from './SubscriptionBadge';
+import { getUserSubscriptionClient } from '@/lib/subscription/client';
 
 const SidebarLink = ({ icon: Icon, label, href, onClick }: { icon: any, label: string, href: string, onClick?: (e: React.MouseEvent) => void }) => {
   const pathname = usePathname();
@@ -40,6 +42,7 @@ const SidebarLink = ({ icon: Icon, label, href, onClick }: { icon: any, label: s
 
 export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) => boolean }) {
   const [profile, setProfile] = useState<any>(null);
+  const [subscription, setSubscription] = useState<{ tier: 'free' | 'pro' | null; isActive: boolean } | null>(null);
   const supabase = createClient();
   const router = useRouter();
 
@@ -58,8 +61,12 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
 
         if (data) {
           setProfile(data);
+          // Fetch subscription status
+          const sub = await getUserSubscriptionClient(user.id);
+          setSubscription(sub);
         } else {
           setProfile({ full_name: user.email?.split('@')[0] || 'User' });
+          setSubscription({ tier: 'free', isActive: true });
         }
 
         // Subscribe to changes
@@ -127,14 +134,17 @@ export default function Sidebar({ onNavigate }: { onNavigate?: (href: string) =>
       <div className="mt-auto pt-6 border-t border-slate-200">
         <div className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl mt-4">
           <div className="flex items-center gap-3 overflow-hidden">
-            <Image
-              alt="User Profile"
-              className="size-10 rounded-full object-cover shrink-0"
-              src={(profile?.avatar_url && !profile.avatar_url.includes('picsum.photos')) ? profile.avatar_url : "/avatars/default.png"}
-              width={40}
-              height={40}
-              referrerPolicy="no-referrer"
-            />
+            <div className="relative shrink-0">
+              <Image
+                alt="User Profile"
+                className="size-10 rounded-full object-cover"
+                src={(profile?.avatar_url && !profile.avatar_url.includes('picsum.photos')) ? profile.avatar_url : "/avatars/default.png"}
+                width={40}
+                height={40}
+                referrerPolicy="no-referrer"
+              />
+              {subscription && <SubscriptionBadge tier={subscription.tier} isActive={subscription.isActive} size="sm" />}
+            </div>
             <div className="flex flex-col min-w-0">
               <p className="text-sm font-bold truncate">
                 {profile?.full_name || 'Loading...'}

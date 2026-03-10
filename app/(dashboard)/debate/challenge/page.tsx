@@ -18,6 +18,8 @@ import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { checkFriendChallengeAccess, recordFriendChallengeUsage } from '@/app/actions/subscription';
+import { Crown, Lock } from 'lucide-react';
 
 const supabase = createClient();
 
@@ -35,6 +37,7 @@ function ChallengeFriendContent() {
   const [timeLimit, setTimeLimit] = useState('10');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [accessCheck, setAccessCheck] = useState<{ allowed: boolean; reason?: string; usage?: { current: number; limit: number } } | null>(null);
 
   React.useEffect(() => {
     async function init() {
@@ -66,6 +69,10 @@ function ChallengeFriendContent() {
       if (friendId) {
         setSelectedFriend(friendId);
       }
+
+      // Check friend challenge access
+      const check = await checkFriendChallengeAccess();
+      setAccessCheck(check);
     }
     init();
   }, [searchParams]);
@@ -76,6 +83,13 @@ function ChallengeFriendContent() {
 
   const handleSendChallenge = async () => {
     if (!topic || !selectedFriend || !date || !time || !user) return;
+
+    // Check access
+    const check = await checkFriendChallengeAccess();
+    if (!check.allowed) {
+      alert(check.reason || 'Access denied');
+      return;
+    }
 
     const scheduledAt = new Date(`${date}T${time}`);
     const now = new Date();
@@ -101,6 +115,13 @@ function ChallengeFriendContent() {
       .select().single();
 
     if (!error && newDebate) {
+      // Record usage
+      try {
+        await recordFriendChallengeUsage(newDebate.id);
+      } catch (err) {
+        console.error('Failed to record usage:', err);
+      }
+      
       router.refresh();
       router.push(`/debates?tab=pending`);
     } else {
@@ -135,6 +156,34 @@ function ChallengeFriendContent() {
                   <p className="text-slate-500 font-medium">Set the stage for a legendary discourse.</p>
                 </div>
               </div>
+
+              {/* Usage Warning */}
+              {accessCheck && !accessCheck.allowed && (
+                <div className="mb-8 bg-amber-50 border-2 border-amber-200 rounded-2xl p-6">
+                  <div className="flex items-start gap-4">
+                    <Lock className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="font-bold text-amber-900 mb-1">Monthly Limit Reached</h3>
+                      <p className="text-sm text-amber-700 mb-3">{accessCheck.reason}</p>
+                      <button
+                        onClick={() => router.push('/settings')}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-700 transition-colors"
+                      >
+                        <Crown className="w-4 h-4" />
+                        Upgrade to Pro
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {accessCheck && accessCheck.allowed && accessCheck.usage && (
+                <div className="mb-8 bg-blue-50 border border-blue-200 rounded-2xl p-4">
+                  <p className="text-sm text-blue-700">
+                    <span className="font-bold">{accessCheck.usage.current}</span> of <span className="font-bold">{accessCheck.usage.limit}</span> friend challenges used this month
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-8">
                 {/* Topic Input */}

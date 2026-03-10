@@ -95,12 +95,24 @@ function DebatesContent() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { histories: [], scheduled: [], pending: [] };
 
+    // Check subscription tier for history limit
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('subscription_tier, subscription_expires_at')
+      .eq('id', user.id)
+      .single();
+    
+    const isPro = profile?.subscription_tier === 'pro' && 
+      (!profile.subscription_expires_at || new Date(profile.subscription_expires_at) > new Date());
+    const historyLimit = isPro ? null : 10; // null means unlimited
+
     const histPromise = supabase
       .from('debates')
       .select(`*`)
       .eq('status', 'concluded')
       .or(`pro_user_id.eq.${user.id},con_user_id.eq.${user.id}`)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(historyLimit || 1000); // Apply limit if free tier
 
     const schedPromise = supabase
       .from('debates')

@@ -18,10 +18,12 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/client';
+import SubscriptionBadge from '@/components/SubscriptionBadge';
+import { getUserSubscriptionClient } from '@/lib/subscription/client';
 
 const supabase = createClient();
 
-const FriendCard = ({ id, name, personality, avatar, onChat, isOnline, unreadCount = 0 }: any) => {
+const FriendCard = ({ id, name, personality, avatar, onChat, isOnline, unreadCount = 0, subscription }: any) => {
   const router = useRouter();
 
   return (
@@ -39,6 +41,7 @@ const FriendCard = ({ id, name, personality, avatar, onChat, isOnline, unreadCou
             />
           </div>
           <div className={`absolute bottom-0.5 right-0.5 size-3.5 rounded-full border-2 border-white ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+          {subscription && <SubscriptionBadge tier={subscription.tier} isActive={subscription.isActive} size="sm" position="top-right" />}
         </div>
         <div>
           <div className="flex items-center gap-2">
@@ -293,16 +296,18 @@ export default function FriendManager() {
       outgoingPromise
     ]);
 
-    const friendsList = (friendshipRes.data || []).filter((f: any) => f.friend).map((f: any) => {
+    const friendsList = await Promise.all((friendshipRes.data || []).filter((f: any) => f.friend).map(async (f: any) => {
       const avatar = f.friend.avatar_url;
+      const subscription = await getUserSubscriptionClient(f.friend.id);
       return {
         id: f.friend.id,
         name: f.friend.full_name || 'Anonymous',
         personality: f.friend.specialty || '',
         avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : "/avatars/default.png",
-        isOnline: Math.random() > 0.5 // Simulated for now
+        isOnline: Math.random() > 0.5, // Simulated for now
+        subscription
       };
-    });
+    }));
 
     const incomingList = (incomingRes.data || []).filter((f: any) => f.requestor).map((f: any) => {
       const avatar = f.requestor.avatar_url;
@@ -675,6 +680,7 @@ export default function FriendManager() {
                       avatar={friend.avatar}
                       isOnline={friend.isOnline}
                       unreadCount={unreadCounts[friend.id] || 0}
+                      subscription={friend.subscription}
                       onChat={() => {
                         setChatFriend(friend);
                         setUnreadCounts(prev => ({ ...prev, [friend.id]: 0 }));

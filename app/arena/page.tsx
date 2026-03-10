@@ -27,6 +27,9 @@ import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
 import { getAIResponse, saveMessage, evaluateDebate, forfeitDebate, concludeDebate } from '@/app/actions/debate';
+import { recordAIDebateUsage } from '@/app/actions/subscription';
+import SubscriptionBadge from '@/components/SubscriptionBadge';
+import { getUserSubscriptionClient } from '@/lib/subscription/client';
 
 const supabase = createClient();
 
@@ -90,6 +93,8 @@ function ArenaContent() {
   const [activeMode, setActiveMode] = useState<string>(modeFromUrl);
   const [proParticipant, setProParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: '/avatars/default.png' });
   const [conParticipant, setConParticipant] = useState<any>({ id: null, name: 'Loading...', avatar: '/avatars/default.png' });
+  const [proSubscription, setProSubscription] = useState<{ tier: 'free' | 'pro' | null; isActive: boolean } | null>(null);
+  const [conSubscription, setConSubscription] = useState<{ tier: 'free' | 'pro' | null; isActive: boolean } | null>(null);
   const startTimeParam = searchParams.get('startTime');
 
   const currentUserRole = (userProfile && conParticipant.id === userProfile.id) ? 'con' : 'pro';
@@ -164,6 +169,9 @@ function ArenaContent() {
               const avatar = proProfile.avatar_url;
               currentPro = { id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` };
               setProParticipant(currentPro);
+              // Fetch subscription for pro participant
+              const proSub = await getUserSubscriptionClient(proProfile.id);
+              setProSubscription(proSub);
             }
           }
 
@@ -174,10 +182,14 @@ function ArenaContent() {
               const avatar = conProfile.avatar_url;
               currentCon = { id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` };
               setConParticipant(currentCon);
+              // Fetch subscription for con participant
+              const conSub = await getUserSubscriptionClient(conProfile.id);
+              setConSubscription(conSub);
             }
           } else if (debate.mode === 'ai') {
             currentCon = { id: 'ai', name: (models as any)[debate.model || 'gemini']?.name || 'AI Assistant', avatar: '/avatars/default.png' };
             setConParticipant(currentCon);
+            setConSubscription(null); // AI has no subscription
           }
 
           const myId = user?.id;
@@ -244,6 +256,9 @@ function ArenaContent() {
               if (proProfile) {
                 const avatar = proProfile.avatar_url;
                 setProParticipant({ id: proProfile.id, name: proProfile.full_name || 'Affirmative', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` });
+                // Fetch subscription for pro participant
+                const proSub = await getUserSubscriptionClient(proProfile.id);
+                setProSubscription(proSub);
               }
             }
 
@@ -253,6 +268,9 @@ function ArenaContent() {
               if (conProfile) {
                 const avatar = conProfile.avatar_url;
                 setConParticipant({ id: conProfile.id, name: conProfile.full_name || 'Opposition', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` });
+                // Fetch subscription for con participant
+                const conSub = await getUserSubscriptionClient(conProfile.id);
+                setConSubscription(conSub);
               }
             } else if (debate.mode === 'ai') {
               // Gracefully handle missing model column in older records
@@ -262,6 +280,7 @@ function ArenaContent() {
                 name: (models as any)[modelKey]?.name || 'AI Assistant',
                 avatar: '/avatars/default.png'
               });
+              setConSubscription(null); // AI has no subscription
             }
           }
 
@@ -320,6 +339,12 @@ function ArenaContent() {
           }
 
           if (newDebate) {
+            // Record usage for subscription tracking
+            try {
+              await recordAIDebateUsage(newDebate.id);
+            } catch (err) {
+              console.error('Failed to record usage:', err);
+            }
             initNewDebate(newDebate, activeProfile, user);
           }
         }
@@ -337,6 +362,11 @@ function ArenaContent() {
       const avatar = activeProfile?.avatar_url;
       setProParticipant({ id: user.id, name: activeProfile?.full_name || 'User', avatar: (avatar && !avatar.includes('picsum.photos')) ? avatar : `/avatars/default.png` });
       setConParticipant({ id: 'ai', name: (models as any)[modelId]?.name || 'AI Assistant', avatar: '/avatars/default.png' });
+      
+      // Fetch subscription for pro participant (current user)
+      const proSub = await getUserSubscriptionClient(user.id);
+      setProSubscription(proSub);
+      setConSubscription(null); // AI has no subscription
 
       let baseDuration = debate.time_limit ? debate.time_limit * 60 : 600;
       let startMs = new Date(debate.created_at || Date.now()).getTime();
@@ -755,10 +785,16 @@ function ArenaContent() {
                     <div className="size-8 rounded-full border-2 border-white bg-blue-100 overflow-hidden relative">
                       <Image alt={proParticipant.name} src={proParticipant.avatar} width={32} height={32} referrerPolicy="no-referrer" />
                       <div className={`absolute bottom-0 right-0 size-2 rounded-full border border-white ${isHistoryView ? 'bg-slate-300' : ((userProfile?.id === proParticipant.id || onlineUsers.has(proParticipant.id) || proParticipant.id === 'ai') ? 'bg-emerald-500' : 'bg-slate-300')}`} />
+                      {proParticipant.id && proParticipant.id !== 'ai' && proSubscription && (
+                        <SubscriptionBadge tier={proSubscription.tier} isActive={proSubscription.isActive} size="sm" position="top-right" />
+                      )}
                     </div>
                     <div className="size-8 rounded-full border-2 border-white bg-rose-100 overflow-hidden relative">
                       <Image alt={isHistoryView ? historyOpponent.name : conParticipant.name} src={isHistoryView ? historyOpponent.avatar : conParticipant.avatar} width={32} height={32} referrerPolicy="no-referrer" />
                       <div className={`absolute bottom-0 right-0 size-2 rounded-full border border-white ${isHistoryView ? 'bg-slate-300' : ((userProfile?.id === conParticipant.id || onlineUsers.has(conParticipant.id) || conParticipant.id === 'ai') ? 'bg-emerald-500' : 'bg-slate-300')}`} />
+                      {conParticipant.id && conParticipant.id !== 'ai' && conSubscription && (
+                        <SubscriptionBadge tier={conSubscription.tier} isActive={conSubscription.isActive} size="sm" position="top-right" />
+                      )}
                     </div>
                   </div>
                   <button

@@ -16,7 +16,10 @@ import { useRouter } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/client';
 import { updateProfile } from '@/app/actions/user';
+import { getSubscriptionStatus } from '@/app/actions/subscription';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Crown } from 'lucide-react';
+import SubscriptionBadge from '@/components/SubscriptionBadge';
 
 const supabase = createClient();
 
@@ -42,6 +45,7 @@ export default function SettingsPage() {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [subscription, setSubscription] = useState<{ tier: 'free' | 'pro'; isActive: boolean; expiresAt: Date | null } | null>(null);
 
 
     useEffect(() => {
@@ -63,6 +67,10 @@ export default function SettingsPage() {
                 } else {
                     setFullName(user.email?.split('@')[0] || '');
                 }
+                
+                // Fetch subscription status
+                const sub = await getSubscriptionStatus();
+                setSubscription(sub);
             }
             setLoading(false);
         }
@@ -189,6 +197,11 @@ export default function SettingsPage() {
                                             className="object-cover"
                                         />
                                     </div>
+                                    {subscription && (
+                                        <div className="absolute top-2 right-2">
+                                            <SubscriptionBadge tier={subscription.tier} isActive={subscription.isActive} size="md" position="top-right" />
+                                        </div>
+                                    )}
                                     <button
                                         onClick={handleCameraClick}
                                         disabled={uploading}
@@ -248,6 +261,79 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Subscription Section */}
+                            {subscription && (
+                                <div className="space-y-4 pt-8 border-t border-slate-200">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                        Subscription
+                                    </label>
+                                    <div className="bg-gradient-to-br from-[#585bf3]/10 to-purple-500/10 rounded-2xl p-6 border border-[#585bf3]/20">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center gap-3">
+                                                {subscription.tier === 'pro' ? (
+                                                    <Crown className="w-6 h-6 text-amber-500" />
+                                                ) : (
+                                                    <Shield className="w-6 h-6 text-slate-400" />
+                                                )}
+                                                <div>
+                                                    <h3 className="font-bold text-slate-900">
+                                                        {subscription.tier === 'pro' ? 'Pro Subscription' : 'Free Plan'}
+                                                    </h3>
+                                                    <p className="text-xs text-slate-500">
+                                                        {subscription.tier === 'pro' 
+                                                            ? subscription.expiresAt 
+                                                                ? `Expires ${new Date(subscription.expiresAt).toLocaleDateString()}`
+                                                                : 'Active'
+                                                            : 'Upgrade to unlock all features'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {subscription.tier === 'free' && (
+                                                <button
+                                                    onClick={() => alert('Payment integration coming soon!')}
+                                                    className="px-4 py-2 bg-[#585bf3] text-white rounded-xl text-sm font-bold hover:bg-[#585bf3]/90 transition-colors"
+                                                >
+                                                    Upgrade
+                                                </button>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">AI Debates</span>
+                                                <span className="font-bold text-slate-900">
+                                                    {subscription.tier === 'pro' ? 'Unlimited' : '3/month'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">Friend Challenges</span>
+                                                <span className="font-bold text-slate-900">
+                                                    {subscription.tier === 'pro' ? 'Unlimited' : '1/month'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">AI Models</span>
+                                                <span className="font-bold text-slate-900">
+                                                    {subscription.tier === 'pro' ? 'All Models' : 'Gemini Only'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">Time Limits</span>
+                                                <span className="font-bold text-slate-900">
+                                                    {subscription.tier === 'pro' ? 'Up to 60 min' : 'Up to 10 min'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">History</span>
+                                                <span className="font-bold text-slate-900">
+                                                    {subscription.tier === 'pro' ? 'Unlimited' : 'Last 10 debates'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Action Section */}
                             <div className="flex flex-col items-center gap-6 pt-4">
