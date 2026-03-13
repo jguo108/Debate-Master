@@ -22,6 +22,22 @@ import { getAllowedAIModels, getAllowedTimeLimits, checkAIDebateAccess } from '@
 
 const models = [
   {
+    id: 'kimi',
+    name: 'Kimi K2',
+    provider: 'Groq',
+    description: 'Moonshot AI\'s MoE model with strong reasoning and agentic capabilities.',
+    color: 'from-amber-500 to-orange-600',
+    icon: 'https://console.groq.com/favicon.ico'
+  },
+  {
+    id: 'groq',
+    name: 'Llama 3',
+    provider: 'Groq',
+    description: 'Meta\'s 70B model with strong reasoning and multilingual support.',
+    color: 'from-violet-500 to-fuchsia-500',
+    icon: 'https://console.groq.com/favicon.ico'
+  },
+  {
     id: 'gemini',
     name: 'Gemini 2.5 Flash',
     provider: 'Google',
@@ -29,22 +45,14 @@ const models = [
     color: 'from-blue-500 to-emerald-500',
     icon: 'https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg'
   },
-  {
-    id: 'groq',
-    name: 'Llama 3.3 70B Versatile',
-    provider: 'Groq',
-    description: 'Meta\'s 70B model with strong reasoning and multilingual support.',
-    color: 'from-violet-500 to-fuchsia-500',
-    icon: 'https://console.groq.com/favicon.ico'
-  },
 ];
 
 export default function PracticeSoloPage() {
   const router = useRouter();
   const [topic, setTopic] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string | null>('gemini');
+  const [selectedModel, setSelectedModel] = useState<string | null>('kimi');
   const [timeLimit, setTimeLimit] = useState('10');
-  const [allowedModels, setAllowedModels] = useState<string[]>(['gemini']);
+  const [allowedModels, setAllowedModels] = useState<string[]>(['kimi']);
   const [allowedTimeLimits, setAllowedTimeLimits] = useState<number[]>([1, 5, 10]);
   const [accessCheck, setAccessCheck] = useState<{ allowed: boolean; reason?: string; usage?: { current: number; limit: number } } | null>(null);
 
@@ -180,7 +188,6 @@ export default function PracticeSoloPage() {
 
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-black text-[#585bf3] uppercase tracking-widest">{model.provider}</span>
                           {selectedModel === model.id && isAllowed && (
                             <span className="bg-[#585bf3] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">SELECTED</span>
                           )}

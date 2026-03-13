@@ -36,7 +36,8 @@ const supabase = createClient();
 
 const models = {
   gemini: { name: 'Gemini 2.5 Flash', provider: 'Google' },
-  groq: { name: 'Llama 3.3 70B Versatile', provider: 'Groq' },
+  groq: { name: 'Llama 3', provider: 'Groq' },
+  kimi: { name: 'Kimi K2', provider: 'Groq' },
 };
 
 interface Message {

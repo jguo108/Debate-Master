@@ -26,7 +26,10 @@ export async function getAIResponse(debateId: string, topic: string, history: an
     const modelId = (debate?.model as string) || 'gemini'
 
     if (modelId === 'groq') {
-        return getGroqAIResponse(supabase, debateId, topic, history)
+        return getGroqAIResponse(supabase, debateId, topic, history, 'llama-3.3-70b-versatile', 'Llama 3')
+    }
+    if (modelId === 'kimi') {
+        return getGroqAIResponse(supabase, debateId, topic, history, 'moonshotai/kimi-k2-instruct', 'Kimi K2')
     }
 
     return getGeminiAIResponse(supabase, debateId, topic, history)
@@ -78,10 +81,14 @@ async function getGeminiAIResponse(supabase: Awaited<ReturnType<typeof createCli
     }
 }
 
-const GROQ_MODEL = 'llama-3.3-70b-versatile'
-const GROQ_AUTHOR_NAME = 'Llama 3.3 70B Versatile'
-
-async function getGroqAIResponse(supabase: Awaited<ReturnType<typeof createClient>>, debateId: string, topic: string, history: any[]) {
+async function getGroqAIResponse(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    debateId: string,
+    topic: string,
+    history: any[],
+    groqModelId: string,
+    authorName: string
+) {
     const apiKey = process.env.GROQ_API_KEY
     if (!apiKey) {
         console.error('GROQ_API_KEY is not set')
@@ -113,9 +120,9 @@ async function getGroqAIResponse(supabase: Awaited<ReturnType<typeof createClien
     }
 
     try {
-        console.log(`DEBUG: Generating Groq (${GROQ_MODEL}) response for debate ${debateId}...`);
+        console.log(`DEBUG: Generating Groq (${groqModelId}) response for debate ${debateId}...`);
         const completion = await groq.chat.completions.create({
-            model: GROQ_MODEL,
+            model: groqModelId,
             messages,
             max_tokens: 256,
             temperature: 0.7,
@@ -131,7 +138,7 @@ async function getGroqAIResponse(supabase: Awaited<ReturnType<typeof createClien
             .insert({
                 debate_id: debateId,
                 role: 'con',
-                author_name: GROQ_AUTHOR_NAME,
+                author_name: authorName,
                 content: responseText,
                 is_ai: true
             })
