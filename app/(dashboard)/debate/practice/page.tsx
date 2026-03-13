@@ -29,28 +29,12 @@ const models = [
     color: 'from-blue-500 to-emerald-500',
     icon: 'https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg'
   },
-  {
-    id: 'openai',
-    name: 'GPT-4o',
-    provider: 'OpenAI',
-    description: 'The industry standard for logical consistency and nuance.',
-    color: 'from-slate-700 to-slate-900',
-    icon: 'https://upload.wikimedia.org/wikipedia/commons/0/04/ChatGPT_logo.svg'
-  },
-  {
-    id: 'anthropic',
-    name: 'Claude 3.5 Sonnet',
-    provider: 'Anthropic',
-    description: 'Exceptional at nuanced writing and ethical reasoning.',
-    color: 'from-orange-400 to-rose-600',
-    icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/1200px-Anthropic_logo.svg.png'
-  },
 ];
 
 export default function PracticeSoloPage() {
   const router = useRouter();
   const [topic, setTopic] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string | null>('gemini');
   const [timeLimit, setTimeLimit] = useState('10');
   const [allowedModels, setAllowedModels] = useState<string[]>(['gemini']);
   const [allowedTimeLimits, setAllowedTimeLimits] = useState<number[]>([1, 5, 10]);

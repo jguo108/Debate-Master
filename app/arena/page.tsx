@@ -36,8 +36,6 @@ const supabase = createClient();
 
 const models = {
   gemini: { name: 'Gemini 2.5 Flash', provider: 'Google' },
-  openai: { name: 'GPT-4o', provider: 'OpenAI' },
-  anthropic: { name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
 };
 
 interface Message {
