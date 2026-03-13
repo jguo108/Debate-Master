@@ -174,12 +174,14 @@ function DebatesContent() {
       })
       .map(d => {
         const opp = mapOpponent(d);
-        // For concluded debates: winner_id === user.id means Won, null means Tie, otherwise Lost
+        // For concluded debates: winner_id === user.id means Won, null means Tie, otherwise Lost.
+        // Exception: if user forfeited (left early) vs AI, winner_id is null but it should show as Lost.
         let outcome: 'Won' | 'Tie' | 'Lost';
         if (d.winner_id === user.id) {
           outcome = 'Won';
         } else if (d.winner_id === null) {
-          outcome = 'Tie';
+          const isForfeitVsAi = d.mode === 'ai' && (d.evaluation_reason?.toLowerCase().includes('forfeited') ?? false);
+          outcome = isForfeitVsAi ? 'Lost' : 'Tie';
         } else {
           outcome = 'Lost';
         }

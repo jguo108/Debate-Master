@@ -199,11 +199,15 @@ function ArenaContent() {
           setHistoryOpponent({ name: oppProfile.name, avatar: oppProfile.avatar });
 
           // Helper to resolve winner name
+          const isForfeitVsAi = debate.mode === 'ai' && (debate.evaluation_reason?.toLowerCase().includes('forfeited') ?? false);
           if (debate.winner_id === myId) {
             setWinner('You');
           } else if (debate.winner_id) {
             const winProfile = debate.winner_id === currentPro.id ? currentPro : currentCon;
             setWinner(winProfile.name || 'Opponent');
+          } else if (isForfeitVsAi) {
+            // User left early vs AI: winner_id is null but opponent (AI) wins
+            setWinner(oppProfile.name || 'Opponent');
           } else {
             // For concluded debates, winner_id === null means it's a tie
             setWinner('Tie');
