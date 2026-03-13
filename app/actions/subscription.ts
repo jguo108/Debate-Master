@@ -58,7 +58,7 @@ export async function getAllowedAIModels() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
-  if (!user) return ['gemini']
+  if (!user) return ['groq']
   
   const { getAllowedAIModels: getModels } = await import('@/lib/subscription/check')
   return await getModels(user.id)

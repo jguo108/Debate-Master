@@ -1,47 +1,61 @@
 'use server'
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import Groq from 'groq-sdk'
 import { createClient } from '@/lib/supabase/server'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
+const SYSTEM_PROMPT = (topic: string) => `You are a friendly and encouraging debate mentor for kids.
+You are debating a 10-year-old on the topic: "${topic}".
+Your goal is to help them learn how to build strong arguments.
+Your style is clear, logical, and helpful. Use simple words and explain your points well.
+Be a "fair opponent" – make good points, but also compliment the user when they say something smart!
+If this is the start of the debate, give a warm welcome and a simple opening statement for the opposition.
+Keep your responses short and fun (max 100 words).`
+
 export async function getAIResponse(debateId: string, topic: string, history: any[]) {
     const supabase = await createClient()
 
+    const { data: debate } = await supabase
+        .from('debates')
+        .select('model')
+        .eq('id', debateId)
+        .single()
+
+    const modelId = (debate?.model as string) || 'gemini'
+
+    if (modelId === 'groq') {
+        return getGroqAIResponse(supabase, debateId, topic, history)
+    }
+
+    return getGeminiAIResponse(supabase, debateId, topic, history)
+}
+
+async function getGeminiAIResponse(supabase: Awaited<ReturnType<typeof createClient>>, debateId: string, topic: string, history: any[]) {
     const model = genAI.getGenerativeModel({
         model: "gemini-2.5-flash",
-        systemInstruction: `You are a friendly and encouraging debate mentor for kids. 
-    You are debating a 10-year-old on the topic: "${topic}". 
-    Your goal is to help them learn how to build strong arguments.
-    Your style is clear, logical, and helpful. Use simple words and explain your points well.
-    Be a "fair opponent" – make good points, but also compliment the user when they say something smart!
-    If this is the start of the debate, give a warm welcome and a simple opening statement for the opposition.
-    Keep your responses short and fun (max 100 words).`
+        systemInstruction: SYSTEM_PROMPT(topic),
     })
 
-    // Format history for Gemini. If empty, provide a prompt to start the debate.
     let contents = history.map(msg => ({
-        role: msg.role === 'pro' ? 'user' : 'model',
+        role: msg.role === 'pro' ? 'user' as const : 'model' as const,
         parts: [{ text: msg.content }],
     }))
 
     if (contents.length === 0) {
         contents = [{
-            role: 'user',
+            role: 'user' as const,
             parts: [{ text: `The debate on "${topic}" begins now. Please provide your opening statement as the opposition.` }]
         }]
     }
 
     try {
-        console.log(`DEBUG: Generating AI response for debate ${debateId}...`);
-        const result = await model.generateContent({
-            contents: contents,
-        })
+        console.log(`DEBUG: Generating Gemini response for debate ${debateId}...`);
+        const result = await model.generateContent({ contents })
 
         const responseText = result.response.text()
-        console.log(`DEBUG: AI Generated: ${responseText.substring(0, 50)}...`);
 
-        // Save AI response to DB
         const { error: dbError } = await supabase
             .from('messages')
             .insert({
@@ -60,6 +74,76 @@ export async function getAIResponse(debateId: string, topic: string, history: an
         return { content: responseText }
     } catch (error: any) {
         console.error('Gemini Action Error:', error)
+        return { error: error.message || 'Failed to generate AI response' }
+    }
+}
+
+const GROQ_MODEL = 'llama-3.3-70b-versatile'
+const GROQ_AUTHOR_NAME = 'Llama 3.3 70B Versatile'
+
+async function getGroqAIResponse(supabase: Awaited<ReturnType<typeof createClient>>, debateId: string, topic: string, history: any[]) {
+    const apiKey = process.env.GROQ_API_KEY
+    if (!apiKey) {
+        console.error('GROQ_API_KEY is not set')
+        return { error: 'Groq API is not configured.' }
+    }
+
+    const groq = new Groq({ apiKey })
+
+    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+        { role: 'system', content: SYSTEM_PROMPT(topic) },
+    ]
+
+    if (history.length === 0) {
+        messages.push({
+            role: 'user',
+            content: `The debate on "${topic}" begins now. Please provide your opening statement as the opposition.`,
+        })
+    } else {
+        for (const msg of history) {
+            messages.push({
+                role: msg.role === 'pro' ? 'user' : 'assistant',
+                content: msg.content,
+            })
+            if (msg.role === 'con') {
+                // Groq expects user/assistant alternation; last assistant reply is done
+            }
+            // Next message from user (pro) will be added
+        }
+    }
+
+    try {
+        console.log(`DEBUG: Generating Groq (${GROQ_MODEL}) response for debate ${debateId}...`);
+        const completion = await groq.chat.completions.create({
+            model: GROQ_MODEL,
+            messages,
+            max_tokens: 256,
+            temperature: 0.7,
+        })
+
+        const responseText = completion.choices[0]?.message?.content?.trim() ?? ''
+        if (!responseText) {
+            return { error: 'Empty response from Groq' }
+        }
+
+        const { error: dbError } = await supabase
+            .from('messages')
+            .insert({
+                debate_id: debateId,
+                role: 'con',
+                author_name: GROQ_AUTHOR_NAME,
+                content: responseText,
+                is_ai: true
+            })
+
+        if (dbError) {
+            console.error("DEBUG: AI Message Insert Error:", dbError);
+            throw dbError
+        }
+
+        return { content: responseText }
+    } catch (error: any) {
+        console.error('Groq Action Error:', error)
         return { error: error.message || 'Failed to generate AI response' }
     }
 }

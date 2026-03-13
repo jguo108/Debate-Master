@@ -29,6 +29,14 @@ const models = [
     color: 'from-blue-500 to-emerald-500',
     icon: 'https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg'
   },
+  {
+    id: 'groq',
+    name: 'Llama 3.3 70B Versatile',
+    provider: 'Groq',
+    description: 'Meta\'s 70B model with strong reasoning and multilingual support.',
+    color: 'from-violet-500 to-fuchsia-500',
+    icon: 'https://console.groq.com/favicon.ico'
+  },
 ];
 
 export default function PracticeSoloPage() {

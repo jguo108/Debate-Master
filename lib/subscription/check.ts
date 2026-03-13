@@ -131,7 +131,9 @@ export async function getAllowedTimeLimits(userId: string): Promise<number[]> {
 }
 
 export async function getAllowedAIModels(userId: string): Promise<string[]> {
-  return ['gemini']
+  const subscription = await getUserSubscription(userId)
+  const isPro = subscription.tier === 'pro' && subscription.isActive
+  return isPro ? ['gemini', 'groq'] : ['groq']
 }
 
 export async function getHistoryLimit(userId: string): Promise<number | null> {
