@@ -10,7 +10,8 @@ import {
   Sparkles,
   Zap,
   Crown,
-  Lock
+  Lock,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -55,6 +56,7 @@ export default function PracticeSoloPage() {
   const [allowedModels, setAllowedModels] = useState<string[]>(['kimi']);
   const [allowedTimeLimits, setAllowedTimeLimits] = useState<number[]>([1, 5, 10]);
   const [accessCheck, setAccessCheck] = useState<{ allowed: boolean; reason?: string; usage?: { current: number; limit: number } } | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   useEffect(() => {
     async function loadLimits() {
@@ -253,21 +255,35 @@ export default function PracticeSoloPage() {
               <button
                 onClick={async () => {
                   if (!topic || !selectedModel) return;
-                  
-                  const check = await checkAIDebateAccess();
-                  if (!check.allowed) {
-                    alert(check.reason || 'Access denied');
-                    return;
+                  setIsInitializing(true);
+                  try {
+                    const check = await checkAIDebateAccess();
+                    if (!check.allowed) {
+                      alert(check.reason || 'Access denied');
+                      setIsInitializing(false);
+                      return;
+                    }
+                    router.push(`/arena?mode=ai&topic=${encodeURIComponent(topic)}&model=${selectedModel}&timeLimit=${timeLimit}`);
+                  } catch {
+                    setIsInitializing(false);
                   }
-                  
-                  router.push(`/arena?mode=ai&topic=${encodeURIComponent(topic)}&model=${selectedModel}&timeLimit=${timeLimit}`);
                 }}
-                disabled={!topic || !selectedModel || (accessCheck?.allowed === false)}
+                disabled={!topic || !selectedModel || (accessCheck?.allowed === false) || isInitializing}
                 className="group flex items-center gap-3 bg-[#585bf3] hover:bg-[#585bf3]/90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black text-xl px-12 py-5 rounded-full shadow-xl shadow-[#585bf3]/20 transition-all active:scale-95"
               >
-                <Zap className="w-6 h-6 fill-current" />
-                Initialize Training
-                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                {isInitializing ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    Preparing arena…
+                    <ArrowRight className="w-6 h-6 opacity-50" />
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-6 h-6 fill-current" />
+                    Initialize Training
+                    <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
               </button>
             </div>
           </div>
